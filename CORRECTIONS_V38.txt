@@ -1,0 +1,16 @@
+GLOBAL BT V38.0.0 — Corrections ciblées Métiers / Matériaux / Fournisseurs
+
+- Création d'une liste générale indépendante des métiers (catalogue entreprise).
+- Un métier doit obligatoirement exister dans cette liste avant affectation à un projet.
+- Popup général « Ajouter un sous-corps de métier » : suppression des champs Projet et Description.
+- Reprise automatique et unique des anciens métiers de projet vers le catalogue général.
+- Tableau Métiers d'un projet : Corps principal, Activité, Description activité, Main-d'œuvre, Actions.
+- Actions projet Métiers : Modifier / Supprimer centrées.
+- Impression A4 professionnelle de la liste des métiers.
+- Tableau Matériaux d'un projet : Date, Corps principal, Activité, Désignation, Fournisseur, Quantité, Prix unitaire, Prix total, Actions.
+- Actions Matériaux : Modifier / Supprimer centrées.
+- Recherche Matériaux par métier, date ou fournisseur.
+- Impression A4 paysage professionnelle de la liste des matériaux.
+- Suppression d'un métier ou fournisseur depuis la liste générale interdite s'il participe à un projet non clôturé.
+- Retrait d'un métier ou fournisseur depuis l'espace d'un projet autorisé, projet clôturé ou non.
+- Conservation du métier/corps principal et de l'activité dans l'historique matériaux après retrait d'un métier du projet.

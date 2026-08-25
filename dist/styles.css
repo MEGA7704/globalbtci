@@ -710,5 +710,17 @@ label>.password-field-wrap input{margin-top:0}
 /* V37 */
 #v37TradeForm label,#v37ProjectTradeForm label,#v37EditTradeForm label{display:block;margin-bottom:13px}.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}#v37Activity option{white-space:normal}@media print{@page{size:A4 portrait;margin:12mm}.topbar,.project-page-toolbar,.project-page-tabs,.toolbar,.actions,.btn{display:none!important}}
 
-/* V40 référentiel métiers */
-.center{text-align:center!important}.actions.centered{justify-content:center}.project-searchbar{margin:0 0 12px}.project-searchbar input{width:min(620px,100%)}.project-page-card .tablewrap{overflow-x:auto}.project-page-card th,.project-page-card td{vertical-align:middle}@media print{.project-searchbar,.actions,.toolbar,.project-page-toolbar,.project-page-tabs{display:none!important}}
+
+/* V38 — listes projet métiers / matériaux */
+.v38-actions-cell{text-align:center!important}.v38-actions{justify-content:center!important;align-items:center!important}
+.v38-catalog-table table,.v38-trades-table table,.v38-materials-table table{width:100%;table-layout:fixed}
+.v38-catalog-table th,.v38-catalog-table td,.v38-trades-table th,.v38-trades-table td,.v38-materials-table th,.v38-materials-table td{text-align:left;vertical-align:middle}
+.v38-catalog-table th:last-child,.v38-catalog-table td:last-child,.v38-trades-table th:last-child,.v38-trades-table td:last-child,.v38-materials-table th:last-child,.v38-materials-table td:last-child{text-align:center}
+.v38-trades-table th:nth-child(1){width:22%}.v38-trades-table th:nth-child(2){width:18%}.v38-trades-table th:nth-child(3){width:30%}.v38-trades-table th:nth-child(4){width:14%}.v38-trades-table th:nth-child(5){width:16%}
+.v38-materials-table .tablewrap{overflow:auto}.v38-materials-table table{min-width:1180px}
+.v38-materials-table th:nth-child(1){width:9%}.v38-materials-table th:nth-child(2){width:16%}.v38-materials-table th:nth-child(3){width:12%}.v38-materials-table th:nth-child(4){width:17%}.v38-materials-table th:nth-child(5){width:12%}.v38-materials-table th:nth-child(6){width:9%}.v38-materials-table th:nth-child(7){width:10%}.v38-materials-table th:nth-child(8){width:10%}.v38-materials-table th:nth-child(9){width:13%}
+.v38-material-search{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 12px;box-shadow:0 4px 14px rgba(12,55,50,.04)}
+.v38-material-search span{font-size:1.3rem;color:#07594f}.v38-material-search input{flex:1;border:0!important;outline:0;background:transparent;padding:7px 3px!important}.v38-material-search small{color:var(--muted);white-space:nowrap}
+@media(max-width:900px){.v38-material-search{align-items:stretch;flex-wrap:wrap}.v38-material-search input{min-width:220px}.v38-trades-table table{min-width:850px}.v38-trades-table .tablewrap{overflow:auto}}
+
+#v38CatalogTradeForm label,#v38CatalogTradeEditForm label,#v38ProjectTradeForm label,#v38ProjectTradeEditForm label,#v38ExpenseEditForm label{display:block;margin-bottom:13px}
