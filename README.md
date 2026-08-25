@@ -300,3 +300,7 @@ en début/fin de nom.
 
 ## V26 — Métiers hiérarchiques, lignes modifiables et PDF A4
 11 phases principales du chantier, sous-corps sélectionnables, métiers personnalisés, modification par clic sur ligne, impression A4 des projets et métiers.
+
+
+## V27 — Projets centralisés
+Menu membre simplifié et opérations métiers/dépenses/fournisseurs/main-d’œuvre regroupées dans chaque projet. Modification, verrouillage/déverrouillage et suppression sont protégés par le mot de passe Administrateur côté serveur.
