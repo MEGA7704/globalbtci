@@ -30,3 +30,9 @@ GLOBAL BT - CONFIGURATION EXACTE CLOUDFLARE PAGES
 
 7) Premier accès
    La route POST /api/bootstrap initialise le Super Admin si aucun compte Super Admin n'existe.
+
+
+CORRECTION V2
+- Après déploiement, ouvrir /api/health pour vérifier la configuration.
+- Le premier chargement initialise automatiquement les tables D1 si elles n'existent pas.
+- Les secrets restent obligatoires pour créer le Super Admin.

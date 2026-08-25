@@ -1,4 +1,4 @@
-# GLOBAL BT — Version complète Cloudflare Pages / GitHub / D1 / KV
+# GLOBAL BT — Version complète V2 corrigée Cloudflare Pages / GitHub / D1 / KV
 
 ## Ressources imposées
 
@@ -8,9 +8,9 @@
 - D1 database ID : `6cff1413-f730-42e1-abcb-e64e34c6e06f`
 - Binding D1 dans le Worker : `DB`
 
-## Fonctionnalités incluses  
+## Fonctionnalités incluses
 
-- Authentification serveur `POST /api/login`  
+- Authentification serveur `POST /api/login`
 - PBKDF2-SHA-256 exclusivement dans `public/_worker.js`
 - cookies HttpOnly + Secure + SameSite=Lax
 - sessions KV
@@ -99,3 +99,31 @@ npm run dev
 ## Important
 
 Le paiement Wave ouvre seulement la page de paiement. Il n'active pas automatiquement Business. Le changement de plan reste une action Super Admin tant qu'un webhook de paiement vérifié n'est pas ajouté.
+
+
+## Correction V2 — Erreur serveur au premier déploiement
+
+La route `POST /api/bootstrap` vérifie maintenant les bindings D1/KV et crée le schéma minimal
+avec `CREATE TABLE IF NOT EXISTS` si la migration n'a pas encore été appliquée.
+Les migrations SQL restent la méthode normale pour les évolutions ultérieures.
+
+Diagnostic public non sensible :
+- `GET /api/health`
+
+Cette route indique uniquement si D1, KV, les secrets et la table `users` sont configurés.
+Elle n'expose aucune valeur secrète.
+
+
+## V3 — Inscription utilisateur
+
+La page de connexion propose maintenant deux onglets :
+- Se connecter
+- S'inscrire
+
+`POST /api/register` crée automatiquement :
+- une entreprise,
+- son premier Administrateur,
+- un Plan Free de 21 jours,
+- une session sécurisée immédiatement après inscription.
+
+Aucun hash ni sel n'est envoyé au navigateur. Le mot de passe est traité uniquement dans `_worker.js`.

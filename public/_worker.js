@@ -106,8 +106,190 @@ async function setPassword(env,actor,target,newPassword,req){
   return response({ok:true});
 }
 
+
+async function ensureSchema(env){
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS companies (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      code TEXT UNIQUE,
+      phone TEXT,
+      email TEXT,
+      address TEXT,
+      city TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled','deleted')),
+      plan TEXT NOT NULL DEFAULT 'free' CHECK(plan IN ('free','business')),
+      plan_started_at TEXT NOT NULL,
+      plan_expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      company_id TEXT,
+      email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+      full_name TEXT NOT NULL,
+      phone TEXT,
+      role TEXT NOT NULL CHECK(role IN ('superadmin','admin','agent')),
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL,
+      password_iterations INTEGER NOT NULL DEFAULT 210000,
+      password_version INTEGER NOT NULL DEFAULT 1,
+      must_change_password INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled','deleted')),
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      project_type TEXT,
+      location TEXT,
+      owner_name TEXT,
+      manager_name TEXT,
+      budget INTEGER NOT NULL DEFAULT 0,
+      start_date TEXT,
+      end_date TEXT,
+      status TEXT NOT NULL DEFAULT 'in_progress',
+      description TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS trades (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(company_id,project_id,name)
+    )`,
+    `CREATE TABLE IF NOT EXISTS suppliers (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      phone TEXT,
+      email TEXT,
+      address TEXT,
+      city TEXT,
+      specialty TEXT,
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS expenses (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      trade_id TEXT,
+      supplier_id TEXT,
+      expense_date TEXT NOT NULL,
+      description TEXT NOT NULL,
+      quantity REAL NOT NULL DEFAULT 0,
+      unit TEXT,
+      unit_price INTEGER NOT NULL DEFAULT 0,
+      total_price INTEGER NOT NULL DEFAULT 0,
+      invoice_reference TEXT,
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS labor_expenses (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      trade_id TEXT,
+      expense_date TEXT NOT NULL,
+      worker_name TEXT,
+      work_description TEXT NOT NULL,
+      amount INTEGER NOT NULL DEFAULT 0,
+      payment_method TEXT,
+      payment_reference TEXT,
+      notes TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS password_reset_requests (
+      id TEXT PRIMARY KEY,
+      company_id TEXT,
+      user_id TEXT,
+      email TEXT NOT NULL,
+      requested_by_ip TEXT,
+      target_role TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      handled_by TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      handled_at TEXT
+    )`,
+    `CREATE TABLE IF NOT EXISTS audit_logs (
+      id TEXT PRIMARY KEY,
+      company_id TEXT,
+      actor_user_id TEXT,
+      action TEXT NOT NULL,
+      target_type TEXT,
+      target_id TEXT,
+      ip TEXT,
+      metadata_json TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`,
+    `CREATE INDEX IF NOT EXISTS idx_projects_company ON projects(company_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_trades_company_project ON trades(company_id,project_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_suppliers_company ON suppliers(company_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_expenses_company_date ON expenses(company_id,expense_date)`,
+    `CREATE INDEX IF NOT EXISTS idx_labor_company_date ON labor_expenses(company_id,expense_date)`,
+    `CREATE INDEX IF NOT EXISTS idx_reset_status ON password_reset_requests(status,created_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_audit_company_created ON audit_logs(company_id,created_at)`
+  ];
+  for(const sql of statements){
+    await env.DB.prepare(sql).run();
+  }
+}
+async function health(req,env){
+  const result = {
+    ok:true,
+    d1_bound:!!env.DB,
+    kv_bound:!!env.GLOBAL_BT_KV,
+    superadmin_email_configured:!!env.SUPERADMIN_EMAIL,
+    superadmin_password_configured:!!env.SUPERADMIN_INITIAL_PASSWORD,
+    session_pepper_configured:!!env.SESSION_PEPPER,
+    schema_ready:false
+  };
+  try{
+    if(env.DB){
+      const row=await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").first();
+      result.schema_ready=!!row;
+    }
+  }catch(e){
+    result.ok=false;
+    result.database_error="D1 inaccessible";
+  }
+  return response(result,result.ok?200:503);
+}
+
 async function bootstrap(req,env){
   if(req.method!=="POST")return response({error:"Méthode interdite"},405);
+  if(!env.DB)return response({error:"Binding D1 DB manquant dans Cloudflare Pages"},503);
+  if(!env.GLOBAL_BT_KV)return response({error:"Binding KV GLOBAL_BT_KV manquant dans Cloudflare Pages"},503);
+  try{
+    await ensureSchema(env);
+  }catch(e){
+    console.error(JSON.stringify({event:"schema_init_error",message:e?.message||String(e)}));
+    return response({error:"Impossible d'initialiser D1. Vérifiez le binding DB et les droits D1."},503);
+  }
   const exists=await env.DB.prepare("SELECT id FROM users WHERE role='superadmin' AND status!='deleted' LIMIT 1").first();
   if(exists)return response({ok:true,alreadyInitialized:true});
   if(!env.SUPERADMIN_EMAIL||!env.SUPERADMIN_INITIAL_PASSWORD||!env.SESSION_PEPPER)return response({error:"Secrets Super Admin / session non configurés"},503);
@@ -117,6 +299,70 @@ async function bootstrap(req,env){
   await audit(env,{id,company_id:null},"SUPERADMIN_BOOTSTRAP","user",id,clientIp(req));
   return response({ok:true,created:true});
 }
+
+async function register(req,env){
+  if(req.method!=="POST")return response({error:"Méthode interdite"},405);
+  if(!env.DB)return response({error:"Binding D1 DB manquant"},503);
+  if(!env.GLOBAL_BT_KV)return response({error:"Binding KV GLOBAL_BT_KV manquant"},503);
+
+  try{ await ensureSchema(env); }
+  catch(e){
+    console.error(JSON.stringify({event:"register_schema_error",message:e?.message||String(e)}));
+    return response({error:"Base de données indisponible"},503);
+  }
+
+  const b=await parseJson(req);
+  const companyName=cleanText(b.company_name,180);
+  const city=cleanText(b.city,120);
+  const fullName=cleanText(b.full_name,160);
+  const phone=cleanText(b.phone,50);
+  const em=normEmail(b.email);
+  const password=String(b.password||"");
+  const addr=clientIp(req);
+
+  if(!companyName||!fullName||!em)return response({error:"Entreprise, nom et e-mail sont obligatoires"},400);
+  if(password.length<12)return response({error:"Le mot de passe doit contenir au moins 12 caractères"},400);
+  if(await isLimited(env,addr,em))return response({error:"Trop de tentatives. Réessayez dans 15 minutes."},429);
+
+  const exists=await env.DB.prepare("SELECT id FROM users WHERE email=? LIMIT 1").bind(em).first();
+  if(exists){
+    await addFailure(env,addr,em);
+    return response({error:"Un compte utilise déjà cette adresse e-mail"},409);
+  }
+
+  const companyId=crypto.randomUUID();
+  const userId=crypto.randomUUID();
+  const start=nowIso();
+  const end=addDays(21);
+  const salt=randomToken(16);
+  const hash=await passwordHash(password,salt);
+
+  try{
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO companies(id,name,city,status,plan,plan_started_at,plan_expires_at)
+        VALUES(?,?,?,'active','free',?,?)`).bind(companyId,companyName,city,start,end),
+      env.DB.prepare(`INSERT INTO users(id,company_id,email,full_name,phone,role,password_hash,password_salt,password_iterations,password_version,must_change_password,status,created_by)
+        VALUES(?,?,?,?,?,'admin',?,?,?,1,0,'active',?)`).bind(userId,companyId,em,fullName,phone,hash,salt,ITERATIONS,userId)
+    ]);
+  }catch(e){
+    console.error(JSON.stringify({event:"register_error",message:e?.message||String(e)}));
+    return response({error:"Impossible de créer le compte"},500);
+  }
+
+  await clearFailures(env,addr,em);
+  const user={id:userId,company_id:companyId,email:em,full_name:fullName,phone,role:"admin",password_version:1};
+  await audit(env,user,"SELF_REGISTER","company",companyId,addr,{plan:"free",expires_at:end});
+
+  const s=await createSession(env,user);
+  return response({
+    authenticated:true,
+    csrf:s.csrf,
+    user:{id:userId,email:em,full_name:fullName,phone,role:"admin",must_change_password:0},
+    company:{id:companyId,name:companyName,plan:"free",plan_started_at:start,plan_expires_at:end,status:"active"},
+    businessPaymentUrl:env.BUSINESS_PAYMENT_URL
+  },201,{"set-cookie":setSessionCookie(s.token)});
+}
+
 async function login(req,env){
   if(req.method!=="POST")return response({error:"Méthode interdite"},405);
   const b=await parseJson(req),email=normEmail(b.email),password=String(b.password||""),ip=clientIp(req);
@@ -472,7 +718,9 @@ async function superAudit(req,env){
 
 async function route(req,env){
   const p=new URL(req.url).pathname;
+  if(p==="/api/health")return health(req,env);
   if(p==="/api/bootstrap")return bootstrap(req,env);
+  if(p==="/api/register")return register(req,env);
   if(p==="/api/login")return login(req,env);
   if(p==="/api/session")return session(req,env);
   if(p==="/api/logout")return logout(req,env);

@@ -32,9 +32,53 @@ function barChart(items,labelKey,valueKey){
   return `<div class="chart">${items.slice(0,12).map(x=>`<div class="bar-col"><b>${money(x[valueKey])}</b><div class="bar" style="height:${Math.max(4,150*Number(x[valueKey]||0)/max)}px"></div><small title="${esc(x[labelKey])}">${esc(x[labelKey])}</small></div>`).join("")||'<div class="empty">Pas encore de données</div>'}</div>`;
 }
 async function init(){
-  try{await post("/api/bootstrap",{})}catch{}
+  try{
+    await post("/api/bootstrap",{});
+  }catch(err){
+    $("#loginMessage").innerHTML=`Configuration Cloudflare incomplète : ${esc(err.message)}<br><small>Vérifiez D1, KV et les secrets du projet.</small>`;
+  }
   try{state.session=await api("/api/session");await enter()}catch{}
 }
+
+function setAuthMode(mode){
+  const login=mode==="login";
+  $("#loginForm").classList.toggle("hidden",!login);
+  $("#registerForm").classList.toggle("hidden",login);
+  $("#forgotPassword").classList.toggle("hidden",!login);
+  $("#showLogin").classList.toggle("active",login);
+  $("#showRegister").classList.toggle("active",!login);
+  $("#loginMessage").textContent="";
+}
+$("#showLogin").onclick=()=>setAuthMode("login");
+$("#showRegister").onclick=()=>setAuthMode("register");
+$("#toggleRegisterPassword").onclick=()=>{
+  const i=$("#registerPassword");
+  i.type=i.type==="password"?"text":"password";
+  $("#toggleRegisterPassword").textContent=i.type==="password"?"Voir":"Masquer";
+};
+$("#registerForm").onsubmit=async e=>{
+  e.preventDefault();
+  $("#loginMessage").textContent="";
+  const p1=$("#registerPassword").value,p2=$("#registerPassword2").value;
+  if(p1!==p2){
+    $("#loginMessage").textContent="Les deux mots de passe ne correspondent pas.";
+    return;
+  }
+  try{
+    state.session=await post("/api/register",{
+      company_name:$("#registerCompany").value,
+      city:$("#registerCity").value,
+      full_name:$("#registerName").value,
+      phone:$("#registerPhone").value,
+      email:$("#registerEmail").value,
+      password:p1
+    });
+    await enter();
+  }catch(err){
+    $("#loginMessage").textContent=err.message;
+  }
+};
+
 $("#togglePassword").onclick=()=>{const i=$("#loginPassword");i.type=i.type==="password"?"text":"password";$("#togglePassword").textContent=i.type==="password"?"Voir":"Masquer"};
 $("#loginForm").onsubmit=async e=>{
   e.preventDefault();$("#loginMessage").textContent="";
