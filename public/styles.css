@@ -83,3 +83,280 @@ label>.password-field-wrap input{margin-top:0}
 @media(max-width:1050px){.ppm-hero{flex-direction:column;align-items:flex-start}.ppm-kpis{width:100%;grid-template-columns:1fr}.ppm-project h2{font-size:1.8rem}.ppm-building{width:86px;height:86px;font-size:40px}.ppm-footer{flex-direction:column;align-items:stretch}.ppm-footer-actions{justify-content:flex-end}}
 @media(max-width:700px){#modal .modalbox:has(.project-premium-modal){width:98vw}.ppm-top,.ppm-body,.ppm-hero{padding-left:18px;padding-right:18px}.ppm-top{height:68px}.ppm-project{gap:14px}.ppm-kpis{gap:10px}.ppm-section-head{align-items:flex-start;flex-direction:column}.ppm-footer-actions{width:100%}.ppm-footer-actions .btn{flex:1}}
 @media print{#modal{position:static!important;background:#fff!important;backdrop-filter:none!important}.ppm-close,.ppm-tabs,.ppm-section-head .btn,.ppm-footer-actions{display:none!important}#modal .modalbox:has(.project-premium-modal){width:100%!important;box-shadow:none!important;border:none!important}.project-premium-modal{font-size:10pt}.ppm-hero{background:#07594f!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.ppm-table thead th{background:#07594f!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+
+/* ===== V30 POPUP PROJET ADAPTÉ À L'ÉCRAN ===== */
+
+/* Le conteneur modal prend la hauteur utile de l'écran sans scroll global sur desktop */
+#modal{
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  padding:12px;
+}
+
+#modal .modalbox:has(.project-premium-modal){
+  width:min(1480px,98vw);
+  max-width:none;
+  height:min(940px,calc(100vh - 24px));
+  max-height:calc(100vh - 24px);
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+
+.project-premium-modal{
+  height:100%;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+}
+
+.ppm-top{
+  flex:0 0 72px;
+  height:72px;
+  padding:0 30px;
+}
+
+.ppm-hero{
+  flex:0 0 auto;
+  padding:20px 30px;
+  gap:22px;
+}
+
+.ppm-building{
+  width:88px;
+  height:88px;
+  font-size:42px;
+}
+
+.ppm-project h2{
+  font-size:1.9rem;
+  margin-bottom:5px;
+}
+
+.ppm-kpis{
+  gap:12px;
+}
+
+.ppm-kpi{
+  min-height:76px;
+  padding:13px 16px;
+}
+
+.ppm-kpi-icon{
+  font-size:25px;
+}
+
+.ppm-body{
+  flex:1 1 auto;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  padding:18px 30px 18px;
+  overflow:hidden;
+}
+
+.ppm-tabs{
+  flex:0 0 auto;
+  padding-bottom:14px;
+}
+
+.ppm-tab{
+  padding:10px 16px;
+}
+
+#ppmContent{
+  flex:1 1 auto;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+
+.ppm-section-head{
+  flex:0 0 auto;
+  padding:18px 0 12px;
+}
+
+.ppm-section-head h3{
+  font-size:1.35rem;
+}
+
+.ppm-table-wrap{
+  flex:1 1 auto;
+  min-height:0;
+  overflow:auto;
+  overscroll-behavior:contain;
+}
+
+.ppm-table thead{
+  position:sticky;
+  top:0;
+  z-index:2;
+}
+
+.ppm-table thead th{
+  padding:13px 18px;
+}
+
+.ppm-table tbody td{
+  padding:12px 18px;
+}
+
+.ppm-trade-icon{
+  width:40px;
+  height:40px;
+  font-size:20px;
+}
+
+.ppm-footer{
+  flex:0 0 auto;
+  padding-top:14px;
+  margin-top:14px;
+}
+
+.ppm-info{
+  padding:10px 14px;
+  min-width:260px;
+}
+
+/* Desktop large : aucun défilement global du popup */
+@media (min-width:1100px) and (min-height:700px){
+  #modal .modalbox:has(.project-premium-modal){
+    height:calc(100vh - 28px);
+    max-height:calc(100vh - 28px);
+  }
+
+  .project-premium-modal{
+    overflow:hidden;
+  }
+
+  .ppm-hero{
+    min-height:132px;
+  }
+
+  .ppm-table-wrap{
+    overflow:auto;
+    max-height:none;
+  }
+}
+
+/* Écrans larges mais peu hauts : compacte davantage le popup */
+@media (min-width:1100px) and (max-height:820px){
+  .ppm-top{
+    flex-basis:60px;
+    height:60px;
+  }
+
+  .ppm-hero{
+    padding:14px 24px;
+  }
+
+  .ppm-building{
+    width:70px;
+    height:70px;
+    font-size:34px;
+  }
+
+  .ppm-project h2{
+    font-size:1.55rem;
+  }
+
+  .ppm-kpi{
+    min-height:64px;
+    padding:10px 13px;
+  }
+
+  .ppm-body{
+    padding:12px 24px 12px;
+  }
+
+  .ppm-tabs{
+    padding-bottom:10px;
+  }
+
+  .ppm-tab{
+    padding:8px 13px;
+  }
+
+  .ppm-section-head{
+    padding:12px 0 8px;
+  }
+
+  .ppm-table thead th{
+    padding:10px 14px;
+  }
+
+  .ppm-table tbody td{
+    padding:9px 14px;
+  }
+
+  .ppm-footer{
+    padding-top:10px;
+    margin-top:10px;
+  }
+
+  .ppm-info{
+    padding:8px 12px;
+  }
+}
+
+/* Tablette/mobile : autoriser le scroll global si l'écran est petit */
+@media (max-width:1099px){
+  #modal{
+    overflow:auto;
+    align-items:flex-start;
+    padding:8px;
+  }
+
+  #modal .modalbox:has(.project-premium-modal){
+    width:100%;
+    height:auto;
+    max-height:none;
+    overflow:visible;
+  }
+
+  .project-premium-modal{
+    height:auto;
+    overflow:visible;
+  }
+
+  .ppm-body{
+    overflow:visible;
+  }
+
+  #ppmContent{
+    overflow:visible;
+  }
+
+  .ppm-table-wrap{
+    max-height:55vh;
+    overflow:auto;
+  }
+}
+
+/* Très petits écrans */
+@media (max-width:700px){
+  #modal{
+    padding:4px;
+  }
+
+  #modal .modalbox:has(.project-premium-modal){
+    width:100%;
+    border-radius:16px;
+  }
+
+  .ppm-top{
+    padding:0 16px;
+  }
+
+  .ppm-hero,
+  .ppm-body{
+    padding-left:14px;
+    padding-right:14px;
+  }
+
+  .ppm-kpis{
+    grid-template-columns:1fr;
+  }
+}

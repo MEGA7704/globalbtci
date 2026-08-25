@@ -316,3 +316,13 @@ Refonte visuelle du popup projet :
 - tableau professionnel avec actions Voir / Modifier / Supprimer pour les métiers ;
 - pied de popup avec compteur, date de mise à jour, Imprimer et Fermer ;
 - impression adaptée au format A4.
+
+
+## V30 — Popup projet responsive sans défilement global sur grand écran
+
+- le popup s'adapte automatiquement à la hauteur et largeur de l'écran ;
+- sur grand écran, aucun défilement global du popup ;
+- seules les zones de tableau peuvent défiler si la liste est longue ;
+- en-tête, bannière KPI, onglets et pied restent visibles ;
+- affichage encore plus compact sur écrans larges mais peu hauts ;
+- tablette et mobile conservent un comportement responsive avec défilement adapté.
