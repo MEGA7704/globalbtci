@@ -156,3 +156,17 @@ anciennes tables d'authentification.
 - nettoyage automatique si une étape échoue;
 - le message d'erreur indique désormais l'étape (`company_insert`, `user_insert`, `credential_insert`, etc.) et un code non sensible;
 - `/api/health` retourne `company_schema_ready`.
+
+
+## V16 — Authentification membres V3
+
+L'inscription Administrateur échouait à `credential_insert` car l'ancienne table
+`auth_credentials_v2` du D1 était incompatible.
+
+Correction :
+- nouvelle table `member_credentials_v3`;
+- nouveaux Administrateurs et Agents écrivent uniquement dans V3;
+- connexion Administrateur/Agent lit V3;
+- réinitialisations et changements de mot de passe utilisent V3;
+- migration non bloquante depuis `auth_credentials_v2` ou `user_credentials`;
+- le Super Admin reste authentifié directement via le secret Cloudflare.
