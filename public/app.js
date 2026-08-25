@@ -4,106 +4,42 @@ const names={dashboard:"Tableau de bord",projects:"Projets",expenses:"Dépenses"
 
 const actionLocks=new WeakMap();
 
-const DEFAULT_TRADES=[
-  "Terrassement","Implantation","Fouilles","Fondation","Gros œuvre","Maçonnerie",
-  "Béton armé","Ferraillage","Coffrage","Charpente bois","Charpente métallique",
-  "Couverture","Étanchéité","Plomberie sanitaire","Électricité bâtiment",
-  "Climatisation","Ventilation","Menuiserie bois","Menuiserie aluminium",
-  "Menuiserie métallique","Serrurerie","Vitrerie","Carrelage","Faïence",
-  "Revêtement de sol","Enduit","Plâtrerie","Faux plafond","Staff / décoration",
-  "Peinture","Ravalement de façade","Isolation thermique","Isolation acoustique",
-  "Assainissement","Canalisation","Voirie et réseaux divers (VRD)","Pavage",
-  "Aménagement extérieur","Aménagement paysager","Forage","Installation de château d’eau",
-  "Électricité extérieure","Éclairage extérieur","Réseau informatique",
-  "Vidéosurveillance","Contrôle d’accès","Sécurité incendie","Installation solaire",
-  "Groupe électrogène","Ascenseur","Nettoyage de chantier","Démolition",
-  "Évacuation des gravats","Location d’engins","Transport de matériaux","Topographie",
-  "Géomètre","Architecture","Bureau d’études techniques","Contrôle technique",
-  "Suivi de chantier","Autres travaux"
+const TRADE_PHASES=[
+  {key:"01_acquisition_etudes",label:"1. Acquisition, études & préparation administrative",short:"Acquisition & études",trades:["Prospection / acquisition du chantier","Étude de faisabilité","Architecture","Géomètre","Topographie","Étude géotechnique","Bureau d’études techniques","Étude structure béton","Étude électricité","Étude plomberie / assainissement","Métré / devis quantitatif","Planification de chantier","Contrôle technique","Suivi de chantier","Démarches administratives / autorisations"]},
+  {key:"02_installation_preparation",label:"2. Installation & préparation du terrain",short:"Préparation du terrain",trades:["Installation de chantier","Clôture / sécurisation du chantier","Nettoyage du terrain","Démolition","Évacuation des gravats","Implantation","Décapage","Terrassement","Fouilles","Remblai / compactage","Nivellement","Location d’engins","Transport de matériaux"]},
+  {key:"03_fondations_infrastructures",label:"3. Fondations & infrastructures",short:"Fondations",trades:["Fondation","Béton de propreté","Semelles","Longrines","Ferraillage fondations","Coffrage fondations","Béton armé fondations","Soubassement","Drainage","Assainissement enterré","Canalisation enterrée"]},
+  {key:"04_gros_oeuvre",label:"4. Gros œuvre & structure",short:"Gros œuvre",trades:["Gros œuvre","Maçonnerie","Béton armé","Ferraillage","Coffrage","Poteaux / poutres","Dalles / planchers","Escaliers béton","Murs porteurs","Enduit gros œuvre"]},
+  {key:"05_charpente_couverture",label:"5. Charpente, couverture & étanchéité",short:"Charpente & couverture",trades:["Charpente bois","Charpente métallique","Couverture","Étanchéité","Gouttières / descentes EP","Isolation thermique toiture","Isolation acoustique"]},
+  {key:"06_second_oeuvre_technique",label:"6. Second œuvre technique",short:"Lots techniques",trades:["Plomberie sanitaire","Électricité bâtiment","Climatisation","Ventilation","Réseau informatique","Vidéosurveillance","Contrôle d’accès","Sécurité incendie","Installation solaire","Groupe électrogène","Ascenseur","Forage","Installation de château d’eau"]},
+  {key:"07_menuiseries_fermetures",label:"7. Menuiseries, serrurerie & fermetures",short:"Menuiseries",trades:["Menuiserie bois","Menuiserie aluminium","Menuiserie métallique","Serrurerie","Vitrerie","Portes / fenêtres","Garde-corps","Grilles / portails"]},
+  {key:"08_finitions_interieures",label:"8. Revêtements & finitions intérieures",short:"Finitions intérieures",trades:["Carrelage","Faïence","Revêtement de sol","Enduit","Plâtrerie","Faux plafond","Staff / décoration","Peinture","Décoration intérieure"]},
+  {key:"09_facades_exterieurs",label:"9. Façades & aménagements extérieurs",short:"Extérieurs",trades:["Ravalement de façade","Peinture extérieure","Pavage","Voirie et réseaux divers (VRD)","Électricité extérieure","Éclairage extérieur","Aménagement extérieur","Aménagement paysager","Clôture définitive","Portail extérieur"]},
+  {key:"10_essais_livraison",label:"10. Essais, nettoyage & livraison",short:"Réception & livraison",trades:["Essais électriques","Essais plomberie","Essais climatisation","Contrôle qualité","Levée des réserves","Nettoyage de chantier","Nettoyage de fin de travaux","Réception provisoire","Réception définitive","Remise des clés / livraison"]},
+  {key:"11_autres",label:"11. Autres travaux",short:"Autres",trades:["Autres travaux"]}
 ];
-
+const DEFAULT_TRADES=[...new Set(TRADE_PHASES.flatMap(p=>p.trades))];
+function phaseForTrade(name){const n=String(name||"").trim().toLowerCase();return TRADE_PHASES.find(p=>p.trades.some(t=>t.toLowerCase()===n))?.key||"11_autres"}
+function phaseLabel(key){return TRADE_PHASES.find(p=>p.key===key)?.label||"Autres travaux"}
+function phaseShort(key){return TRADE_PHASES.find(p=>p.key===key)?.short||"Autres"}
 function renderTradePicker(selected=[]){
-  const set=new Set(selected);
-  return `
-    <div class="trade-picker">
-      <div class="trade-picker-head">
-        <div>
-          <strong>Corps de métier du projet</strong>
-          <small>Sélectionnez les métiers à utiliser sur ce chantier.</small>
-        </div>
-        <span id="tradeSelectedCount" class="trade-count">${set.size} sélectionné(s)</span>
-      </div>
-      <input id="tradeSearch" class="trade-search" type="search" placeholder="Rechercher un métier...">
-      <div id="tradeLibrary" class="trade-library">
-        ${DEFAULT_TRADES.map(t=>`
-          <label class="trade-option" data-trade-name="${esc(t.toLowerCase())}">
-            <input type="checkbox" name="project_trades" value="${esc(t)}" ${set.has(t)?"checked":""}>
-            <span>${esc(t)}</span>
-          </label>`).join("")}
-      </div>
-      <div class="custom-trade-box">
-        <input id="customTradeInput" type="text" placeholder="Ajouter un métier personnalisé...">
-        <button id="addCustomTrade" class="btn secondary" type="button">+ Ajouter</button>
-      </div>
-      <div id="customTradeList" class="custom-trade-list"></div>
-    </div>`;
+  const selectedSet=new Set(selected.map(x=>typeof x==="string"?x:x.name));
+  return `<div class="trade-picker hierarchical-picker">
+    <div class="trade-picker-head"><div><strong>Corps de métier du projet</strong><small>Choisissez le corps principal, puis les sous-corps à réaliser.</small></div><span id="tradeSelectedCount" class="trade-count">${selectedSet.size} sélectionné(s)</span></div>
+    <div class="phase-selector"><label>Corps principal / phase<select id="tradePhaseSelect">${TRADE_PHASES.map((p,i)=>`<option value="${esc(p.key)}" ${i===0?"selected":""}>${esc(p.label)}</option>`).join("")}</select></label><label>Rechercher<input id="tradeSearch" type="search" placeholder="Rechercher un sous-corps..."></label></div>
+    <div id="tradeLibrary" class="trade-library hierarchical-list">${TRADE_PHASES.flatMap((p,pi)=>p.trades.map(t=>`<label class="trade-option ${pi===0?"":"hidden"}" data-phase="${esc(p.key)}" data-trade-name="${esc(t.toLowerCase())}"><input type="checkbox" name="project_trades" value="${esc(t)}" data-phase="${esc(p.key)}" ${selectedSet.has(t)?"checked":""}><span><b>${esc(t)}</b><small>${esc(p.short)}</small></span></label>`)).join("")}</div>
+    <div class="custom-trade-box"><select id="customTradePhase">${TRADE_PHASES.map(p=>`<option value="${esc(p.key)}">${esc(p.short)}</option>`).join("")}</select><input id="customTradeInput" type="text" placeholder="Ajouter un sous-corps personnalisé..."><button id="addCustomTrade" class="btn secondary" type="button">+ Ajouter</button></div>
+    <div id="customTradeList" class="custom-trade-list"></div></div>`;
 }
-
 function initTradePicker(root=document){
-  const search=root.querySelector("#tradeSearch");
-  const library=root.querySelector("#tradeLibrary");
-  const count=root.querySelector("#tradeSelectedCount");
-  const customInput=root.querySelector("#customTradeInput");
-  const addBtn=root.querySelector("#addCustomTrade");
-  const customList=root.querySelector("#customTradeList");
-  if(!library)return;
-
-  const updateCount=()=>{
-    const n=library.querySelectorAll('input[name="project_trades"]:checked').length+
-      (customList?.querySelectorAll("[data-custom-trade]").length||0);
-    if(count)count.textContent=`${n} sélectionné(s)`;
-  };
-
-  search?.addEventListener("input",()=>{
-    const q=search.value.trim().toLowerCase();
-    library.querySelectorAll(".trade-option").forEach(el=>{
-      el.classList.toggle("hidden",q && !el.dataset.tradeName.includes(q));
-    });
-  });
-
-  library.querySelectorAll('input[name="project_trades"]').forEach(i=>i.addEventListener("change",updateCount));
-
-  const addCustom=()=>{
-    const raw=(customInput?.value||"").trim();
-    if(!raw)return;
-    const exists=[...library.querySelectorAll('input[name="project_trades"]')].some(i=>i.value.toLowerCase()===raw.toLowerCase()) ||
-      [...customList.querySelectorAll("[data-custom-trade]")].some(i=>i.dataset.customTrade.toLowerCase()===raw.toLowerCase());
-    if(exists){
-      toast("Ce métier est déjà dans la sélection.",true);
-      return;
-    }
-    const chip=document.createElement("span");
-    chip.className="custom-trade-chip";
-    chip.dataset.customTrade=raw;
-    chip.innerHTML=`${esc(raw)} <button type="button" aria-label="Retirer">×</button>`;
-    chip.querySelector("button").onclick=()=>{chip.remove();updateCount()};
-    customList.appendChild(chip);
-    customInput.value="";
-    updateCount();
-  };
-
-  addBtn?.addEventListener("click",addCustom);
-  customInput?.addEventListener("keydown",e=>{
-    if(e.key==="Enter"){e.preventDefault();addCustom()}
-  });
-  updateCount();
+  const phase=root.querySelector('#tradePhaseSelect'),search=root.querySelector('#tradeSearch'),lib=root.querySelector('#tradeLibrary'),count=root.querySelector('#tradeSelectedCount'),ci=root.querySelector('#customTradeInput'),cp=root.querySelector('#customTradePhase'),add=root.querySelector('#addCustomTrade'),cl=root.querySelector('#customTradeList'); if(!lib)return;
+  const refresh=()=>{const ph=phase?.value||TRADE_PHASES[0].key,q=(search?.value||'').trim().toLowerCase();lib.querySelectorAll('.trade-option').forEach(el=>el.classList.toggle('hidden',!(el.dataset.phase===ph&&(!q||el.dataset.tradeName.includes(q)))))};
+  const update=()=>{const n=lib.querySelectorAll('input[name="project_trades"]:checked').length+(cl?.querySelectorAll('[data-custom-trade]').length||0);if(count)count.textContent=`${n} sélectionné(s)`};
+  phase?.addEventListener('change',()=>{if(cp)cp.value=phase.value;refresh()}); search?.addEventListener('input',refresh); lib.querySelectorAll('input[name="project_trades"]').forEach(i=>i.addEventListener('change',update));
+  const addCustom=()=>{const raw=(ci?.value||'').trim();if(!raw)return;const ph=cp?.value||phase?.value||'11_autres';const exists=[...lib.querySelectorAll('input[name="project_trades"]')].some(i=>i.value.toLowerCase()===raw.toLowerCase())||[...cl.querySelectorAll('[data-custom-trade]')].some(i=>i.dataset.customTrade.toLowerCase()===raw.toLowerCase());if(exists){toast('Ce métier est déjà dans la sélection.',true);return}const chip=document.createElement('span');chip.className='custom-trade-chip';chip.dataset.customTrade=raw;chip.dataset.phase=ph;chip.innerHTML=`${esc(raw)} <small>${esc(phaseShort(ph))}</small> <button type="button">×</button>`;chip.querySelector('button').onclick=()=>{chip.remove();update()};cl.appendChild(chip);ci.value='';update()};
+  add?.addEventListener('click',addCustom);ci?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addCustom()}});refresh();update();
 }
-
-function collectProjectTrades(root=document){
-  const base=[...root.querySelectorAll('input[name="project_trades"]:checked')].map(i=>i.value.trim());
-  const custom=[...root.querySelectorAll("[data-custom-trade]")].map(i=>i.dataset.customTrade.trim());
-  return [...new Set([...base,...custom].filter(Boolean))];
-}
+function collectProjectTrades(root=document){const base=[...root.querySelectorAll('input[name="project_trades"]:checked')].map(i=>({name:i.value.trim(),phase:i.dataset.phase||phaseForTrade(i.value)}));const custom=[...root.querySelectorAll('[data-custom-trade]')].map(i=>({name:i.dataset.customTrade.trim(),phase:i.dataset.phase||'11_autres'}));const seen=new Set();return [...base,...custom].filter(x=>{const k=x.name.toLowerCase();if(!x.name||seen.has(k))return false;seen.add(k);return true})}
+function printA4(title,subtitle,body){const w=window.open('','_blank','width=1100,height=800');if(!w){toast('Autorisez les popups pour imprimer.',true);return}w.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${esc(title)}</title><style>@page{size:A4 portrait;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172522;font-size:11px}.head{border-bottom:3px solid #0d5c54;padding-bottom:9px;margin-bottom:14px}.head h1{margin:0;color:#073b37;font-size:20px}.head p{margin:4px 0;color:#60716e}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #ccd8d5;padding:6px;vertical-align:top}th{background:#073b37;color:#fff}tr{break-inside:avoid}.phase{font-weight:bold;color:#0d5c54}.footer{margin-top:10px;text-align:right;font-size:9px;color:#71807d}</style></head><body><div class="head"><h1>${esc(title)}</h1><p>${esc(subtitle||'')}</p></div>${body}<div class="footer">GLOBAL BT · ${new Date().toLocaleString('fr-FR')}</div><script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close()}
 
 function setBusy(el,busy,label="Traitement..."){
   if(!el)return;
@@ -425,152 +361,36 @@ function dashboard(){
   `;
 }
 function projects(){
-  $("#content").innerHTML=`<div class="panel">
-    <div class="panelhead">
-      <div><h2>Projets</h2><p class="muted">Créez un projet et affectez immédiatement ses corps de métier.</p></div>
-      <button id="addProject" class="btn primary">+ Nouveau projet</button>
-    </div>
-    ${table(["Projet","Localité","Budget","Statut","Métiers","Actions"],S.data.projects.map(x=>{
-      const count=(S.data.trades||[]).filter(t=>t.project_id===x.id).length;
-      return `<tr>
-        <td><strong>${esc(x.name)}</strong></td>
-        <td>${esc(x.location||"")}</td>
-        <td class="money">${cash(x.budget)}</td>
-        <td><span class="status">${esc(x.status)}</span></td>
-        <td>${count} métier(s)</td>
-        <td>${S.session.user.role==="admin"?`<button class="btn small danger del-project" data-id="${x.id}">Supprimer</button>`:""}</td>
-      </tr>`}).join(""))}
-  </div>`;
-
-  $("#addProject").onclick=()=>modal(`
-    <h2>Nouveau projet</h2>
-    <form id="projectForm" class="formgrid">
-      <label>Nom<input name="name" required></label>
-      <label>Type<input name="project_type" value="Bâtiment"></label>
-      <label>Localité<input name="location"></label>
-      <label>Budget<input name="budget" type="number" min="0"></label>
-      <label>Maître d'ouvrage<input name="owner_name"></label>
-      <label>Responsable<input name="manager_name"></label>
-      <label>Date début<input name="start_date" type="date"></label>
-      <label>Date fin<input name="end_date" type="date"></label>
-      <label>Statut<select name="status">
-        <option value="preparation">Préparation</option>
-        <option value="in_progress" selected>En cours</option>
-        <option value="suspended">Suspendu</option>
-        <option value="completed">Terminé</option>
-      </select></label>
-      <label class="span2">Description<textarea name="description"></textarea></label>
-      <div class="span2">${renderTradePicker()}</div>
-      <button class="btn primary span2" type="submit">Créer le projet et ses métiers</button>
-    </form>`);
-  initTradePicker($("#modalBody"));
-
-  document.querySelectorAll(".del-project").forEach(b=>b.onclick=()=>confirmBox(
-    "Supprimer ce projet ?",
-    ()=>post("/api/save",{entity:"project",action:"delete",record:{id:b.dataset.id}})
-  ));
+  const rows=S.data.projects.map(x=>{const ts=(S.data.trades||[]).filter(t=>t.project_id===x.id);return `<tr class="clickable-row project-row" data-id="${x.id}"><td><strong>${esc(x.name)}</strong></td><td>${esc(x.location||'')}</td><td class="money">${cash(x.budget)}</td><td><span class="status">${esc(x.status)}</span></td><td>${ts.length} métier(s)</td><td><div class="actions"><button class="btn small secondary edit-project" data-id="${x.id}">Modifier</button><button class="btn small secondary print-project" data-id="${x.id}">PDF A4</button>${S.session.user.role==='admin'?`<button class="btn small danger del-project" data-id="${x.id}">Supprimer</button>`:''}</div></td></tr>`});
+  $('#content').innerHTML=`<div class="panel"><div class="panelhead"><div><h2>Projets</h2><p class="muted">Du lancement à la livraison : métiers, modification et impression.</p></div><div class="toolbar"><button id="printProjects" class="btn secondary">Imprimer A4</button><button id="addProject" class="btn primary">+ Nouveau projet</button></div></div>${table(['Projet','Localité','Budget','Statut','Métiers','Actions'],rows)}</div>`;
+  const openEdit=id=>{const x=S.data.projects.find(p=>p.id===id);if(!x)return;const ts=(S.data.trades||[]).filter(t=>t.project_id===id);modal(`<h2>Modifier le projet</h2><form id="projectEditForm" class="formgrid" data-id="${esc(id)}"><label>Nom<input name="name" value="${esc(x.name)}" required></label><label>Type<input name="project_type" value="${esc(x.project_type||'')}"></label><label>Localité<input name="location" value="${esc(x.location||'')}"></label><label>Budget<input name="budget" type="number" min="0" value="${Number(x.budget||0)}"></label><label>Maître d'ouvrage<input name="owner_name" value="${esc(x.owner_name||'')}"></label><label>Responsable<input name="manager_name" value="${esc(x.manager_name||'')}"></label><label>Date début<input name="start_date" type="date" value="${esc(x.start_date||'')}"></label><label>Date fin<input name="end_date" type="date" value="${esc(x.end_date||'')}"></label><label>Statut<select name="status"><option value="preparation" ${x.status==='preparation'?'selected':''}>Préparation</option><option value="in_progress" ${x.status==='in_progress'?'selected':''}>En cours</option><option value="suspended" ${x.status==='suspended'?'selected':''}>Suspendu</option><option value="completed" ${x.status==='completed'?'selected':''}>Terminé</option></select></label><label class="span2">Description<textarea name="description">${esc(x.description||'')}</textarea></label><div class="span2 current-trades"><strong>Métiers affectés</strong>${ts.length?ts.map(t=>`<span>${esc(t.name)} <small>${esc(phaseShort(t.phase||phaseForTrade(t.name)))}</small></span>`).join(''):'<em>Aucun métier</em>'}</div><button class="btn primary span2" type="submit">Enregistrer</button></form>`)};
+  $('#addProject').onclick=()=>{modal(`<h2>Nouveau projet</h2><form id="projectForm" class="formgrid"><label>Nom<input name="name" required></label><label>Type<input name="project_type" value="Bâtiment"></label><label>Localité<input name="location"></label><label>Budget<input name="budget" type="number" min="0"></label><label>Maître d'ouvrage<input name="owner_name"></label><label>Responsable<input name="manager_name"></label><label>Date début<input name="start_date" type="date"></label><label>Date fin<input name="end_date" type="date"></label><label>Statut<select name="status"><option value="preparation">Préparation</option><option value="in_progress" selected>En cours</option><option value="suspended">Suspendu</option><option value="completed">Terminé</option></select></label><label class="span2">Description<textarea name="description"></textarea></label><div class="span2">${renderTradePicker()}</div><button class="btn primary span2" type="submit">Créer le projet et ses métiers</button></form>`);initTradePicker($('#modalBody'))};
+  document.querySelectorAll('.project-row').forEach(r=>r.onclick=e=>{if(!e.target.closest('button'))openEdit(r.dataset.id)});document.querySelectorAll('.edit-project').forEach(b=>b.onclick=e=>{e.stopPropagation();openEdit(b.dataset.id)});
+  document.querySelectorAll('.print-project').forEach(b=>b.onclick=e=>{e.stopPropagation();const x=S.data.projects.find(p=>p.id===b.dataset.id);if(!x)return;const ts=(S.data.trades||[]).filter(t=>t.project_id===x.id);const body=`<table><tr><th>Information</th><th>Détail</th></tr><tr><td>Type</td><td>${esc(x.project_type||'')}</td></tr><tr><td>Localité</td><td>${esc(x.location||'')}</td></tr><tr><td>Budget</td><td>${cash(x.budget)}</td></tr><tr><td>Responsable</td><td>${esc(x.manager_name||'')}</td></tr></table><h3>Corps de métier</h3><table><tr><th>Phase principale</th><th>Sous-corps</th></tr>${ts.sort((a,b)=>String(a.phase||phaseForTrade(a.name)).localeCompare(String(b.phase||phaseForTrade(b.name)))).map(t=>`<tr><td>${esc(phaseLabel(t.phase||phaseForTrade(t.name)))}</td><td>${esc(t.name)}</td></tr>`).join('')}</table>`;printA4(`Projet : ${x.name}`,x.location||'',body)});
+  $('#printProjects').onclick=()=>printA4('Liste des projets',S.session.company?.name||'',`<table><tr><th>Projet</th><th>Localité</th><th>Budget</th><th>Statut</th><th>Métiers</th></tr>${S.data.projects.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.location||'')}</td><td>${cash(x.budget)}</td><td>${esc(x.status)}</td><td>${(S.data.trades||[]).filter(t=>t.project_id===x.id).length}</td></tr>`).join('')}</table>`);
+  document.querySelectorAll('.del-project').forEach(b=>b.onclick=e=>{e.stopPropagation();confirmBox('Supprimer ce projet ?',()=>post('/api/save',{entity:'project',action:'delete',record:{id:b.dataset.id}}))});
 }
-
-document.addEventListener("submit",async e=>{
-  if(e.target.id==="projectForm"){
-    e.preventDefault();
-    const form=e.target;
-    const trades=collectProjectTrades(form);
-    try{
-      const project=await post("/api/save",{entity:"project",action:"create",record:fd(form)});
-      let created=0,duplicates=0,failed=0;
-
-      for(const tradeName of trades){
-        try{
-          await post("/api/save",{
-            entity:"trade",
-            action:"create",
-            record:{project_id:project.id,name:tradeName,description:""}
-          });
-          created++;
-        }catch(err){
-          if(String(err.message).includes("TRADE_ALREADY_EXISTS") || String(err.message).includes("existe déjà"))duplicates++;
-          else failed++;
-        }
-      }
-
-      closeModal();
-      await reload();
-      projects();
-      const detail=trades.length?` · ${created} métier(s) ajouté(s)${duplicates?` · ${duplicates} déjà existant(s)`:""}${failed?` · ${failed} non ajouté(s)`:""}`:"";
-      toast("Projet créé"+detail,failed>0);
-    }catch(x){
-      toast(x.message,true);
-    }finally{
-      releaseForm(form);
-    }
-  }
+document.addEventListener('submit',async e=>{
+  if(e.target.id==='projectForm'){e.preventDefault();const form=e.target,trades=collectProjectTrades(form);try{const project=await post('/api/save',{entity:'project',action:'create',record:fd(form)});let created=0,failed=0;for(const t of trades){try{await post('/api/save',{entity:'trade',action:'create',record:{project_id:project.id,name:t.name,phase:t.phase,description:''}});created++}catch{failed++}}closeModal();await reload();projects();toast(`Projet créé · ${created} métier(s) ajouté(s)${failed?` · ${failed} échec(s)`:''}`,!!failed)}catch(x){toast(x.message,true)}finally{releaseForm(form)}}
+  if(e.target.id==='projectEditForm'){e.preventDefault();const form=e.target;try{await post('/api/save',{entity:'project',action:'update',record:{id:form.dataset.id,...fd(form)}});closeModal();await reload();projects();toast('Projet modifié')}catch(x){toast(x.message,true)}finally{releaseForm(form)}}
 });
 function expenses(){$("#content").innerHTML=`<div class="panel"><div class="panelhead"><h2>Dépenses matériaux</h2><button id="addExpense" class="btn primary">+ Nouvelle dépense</button></div>${table(["Date","Projet","Métier","Désignation","Total","Actions"],S.data.expenses.map(x=>`<tr><td>${df(x.expense_date)}</td><td>${esc(x.project_name)}</td><td>${esc(x.trade_name||"—")}</td><td>${esc(x.description)}</td><td class="money"><strong>${cash(x.total_price)}</strong></td><td>${S.session.user.role==="admin"?`<button class="btn small danger del-exp" data-id="${x.id}">Supprimer</button>`:""}</td></tr>`))}</div>`;$("#addExpense").onclick=()=>modal(`<h2>Nouvelle dépense</h2><form id="expenseForm" class="formgrid"><label>Projet<select name="project_id" required>${opts(S.data.projects)}</select></label><label>Métier<select name="trade_id">${opts(S.data.trades)}</select></label><label>Fournisseur<select name="supplier_id">${opts(S.data.suppliers)}</select></label><label>Date<input name="expense_date" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label class="span2">Désignation<input name="description" required></label><label>Quantité<input name="quantity" type="number" step=".01" value="1"></label><label>Unité<input name="unit"></label><label>Prix unitaire<input name="unit_price" type="number" min="0"></label><label>Référence<input name="reference"></label><label class="span2">Notes<textarea name="notes"></textarea></label><button class="btn primary span2">Enregistrer</button></form>`);document.querySelectorAll(".del-exp").forEach(b=>b.onclick=()=>confirmBox("Supprimer cette dépense ?",()=>post("/api/save",{entity:"expense",action:"delete",record:{id:b.dataset.id}})))}
 document.addEventListener("submit",async e=>{if(e.target.id==="expenseForm"){e.preventDefault();try{await post("/api/save",{entity:"expense",action:"create",record:fd(e.target)});closeModal();await reload();expenses();toast("Dépense enregistrée")}catch(x){toast(x.message,true)}}});
 function labor(){$("#content").innerHTML=`<div class="panel"><div class="panelhead"><h2>Main-d'œuvre</h2><button id="addLabor" class="btn primary">+ Ajouter</button></div>${table(["Date","Projet","Prestataire","Travaux","Montant","Actions"],S.data.labor.map(x=>`<tr><td>${df(x.expense_date)}</td><td>${esc(x.project_name)}</td><td>${esc(x.worker_name||"")}</td><td>${esc(x.description)}</td><td class="money">${cash(x.amount)}</td><td>${S.session.user.role==="admin"?`<button class="btn small danger del-labor" data-id="${x.id}">Supprimer</button>`:""}</td></tr>`))}</div>`;$("#addLabor").onclick=()=>modal(`<h2>Main-d'œuvre</h2><form id="laborForm" class="formgrid"><label>Projet<select name="project_id" required>${opts(S.data.projects)}</select></label><label>Métier<select name="trade_id">${opts(S.data.trades)}</select></label><label>Date<input name="expense_date" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label>Prestataire<input name="worker_name"></label><label class="span2">Travaux<input name="description" required></label><label>Montant<input name="amount" type="number" min="0"></label><label>Mode de paiement<select name="payment_method"><option>Espèces</option><option>Mobile Money</option><option>Virement</option><option>Chèque</option></select></label><label>Référence<input name="reference"></label><label class="span2">Notes<textarea name="notes"></textarea></label><button class="btn primary span2">Enregistrer</button></form>`);document.querySelectorAll(".del-labor").forEach(b=>b.onclick=()=>confirmBox("Supprimer cette main-d'œuvre ?",()=>post("/api/save",{entity:"labor",action:"delete",record:{id:b.dataset.id}})))}
 document.addEventListener("submit",async e=>{if(e.target.id==="laborForm"){e.preventDefault();try{await post("/api/save",{entity:"labor",action:"create",record:fd(e.target)});closeModal();await reload();labor();toast("Main-d'œuvre enregistrée")}catch(x){toast(x.message,true)}}});
 function trades(){
-  $("#content").innerHTML=`<div class="panel">
-    <div class="panelhead">
-      <div><h2>Corps de métier</h2><p class="muted">Bibliothèque standard + métiers personnalisés.</p></div>
-      <button id="addTrade" class="btn primary">+ Ajouter</button>
-    </div>
-    ${table(["Projet","Métier","Description","Actions"],S.data.trades.map(x=>`
-      <tr>
-        <td>${esc(S.data.projects.find(p=>p.id===x.project_id)?.name||"")}</td>
-        <td><strong>${esc(x.name)}</strong></td>
-        <td>${esc(x.description||"")}</td>
-        <td>${S.session.user.role==="admin"?`<button class="btn small danger del-trade" data-id="${x.id}">Supprimer</button>`:""}</td>
-      </tr>`))}
-  </div>`;
-
-  $("#addTrade").onclick=()=>modal(`
-    <h2>Ajouter un corps de métier</h2>
-    <form id="tradeForm">
-      <label>Projet<select name="project_id" required>${opts(S.data.projects)}</select></label>
-      <label>Rechercher dans la bibliothèque
-        <input id="singleTradeSearch" type="search" placeholder="Ex. maçonnerie, plomberie...">
-      </label>
-      <div id="singleTradeLibrary" class="single-trade-library">
-        ${DEFAULT_TRADES.map(t=>`<button type="button" class="single-trade-choice" data-name="${esc(t)}">${esc(t)}</button>`).join("")}
-      </div>
-      <label>Métier sélectionné ou personnalisé<input id="tradeNameInput" name="name" required placeholder="Choisir ci-dessus ou saisir un métier"></label>
-      <label>Description<textarea name="description"></textarea></label>
-      <button class="btn primary full" type="submit">Ajouter le métier</button>
-    </form>`);
-
-  const search=$("#singleTradeSearch"),lib=$("#singleTradeLibrary"),nameInput=$("#tradeNameInput");
-  search?.addEventListener("input",()=>{
-    const q=search.value.trim().toLowerCase();
-    lib.querySelectorAll(".single-trade-choice").forEach(b=>b.classList.toggle("hidden",q&&!b.dataset.name.toLowerCase().includes(q)));
-  });
-  lib?.querySelectorAll(".single-trade-choice").forEach(b=>b.onclick=()=>{
-    nameInput.value=b.dataset.name;
-    lib.querySelectorAll(".single-trade-choice").forEach(x=>x.classList.toggle("selected",x===b));
-  });
-
-  document.querySelectorAll(".del-trade").forEach(b=>b.onclick=()=>confirmBox(
-    "Supprimer ce métier ?",
-    ()=>post("/api/save",{entity:"trade",action:"delete",record:{id:b.dataset.id}})
-  ));
+  const rows=(S.data.trades||[]).map(x=>`<tr class="clickable-row trade-row" data-id="${x.id}"><td>${esc(S.data.projects.find(p=>p.id===x.project_id)?.name||'')}</td><td><span class="phase-badge">${esc(phaseShort(x.phase||phaseForTrade(x.name)))}</span></td><td><strong>${esc(x.name)}</strong></td><td>${esc(x.description||'')}</td><td><div class="actions"><button class="btn small secondary edit-trade" data-id="${x.id}">Modifier</button><button class="btn small secondary print-trade" data-id="${x.id}">PDF</button>${S.session.user.role==='admin'?`<button class="btn small danger del-trade" data-id="${x.id}">Supprimer</button>`:''}</div></td></tr>`);
+  $('#content').innerHTML=`<div class="panel"><div class="panelhead"><div><h2>Corps de métier</h2><p class="muted">Phases principales et sous-corps, de l'acquisition à la livraison.</p></div><div class="toolbar"><button id="printTrades" class="btn secondary">Imprimer A4</button><button id="addTrade" class="btn primary">+ Ajouter</button></div></div>${table(['Projet','Corps principal','Sous-corps de métier','Description','Actions'],rows)}</div>`;
+  const openEdit=id=>{const x=S.data.trades.find(t=>t.id===id);if(!x)return;const ph=x.phase||phaseForTrade(x.name);modal(`<h2>Modifier le corps de métier</h2><form id="tradeEditForm" data-id="${esc(id)}"><label>Projet<select name="project_id" required>${opts(S.data.projects,x.project_id)}</select></label><label>Corps principal<select name="phase">${TRADE_PHASES.map(p=>`<option value="${esc(p.key)}" ${p.key===ph?'selected':''}>${esc(p.label)}</option>`).join('')}</select></label><label>Sous-corps<input name="name" value="${esc(x.name)}" required></label><label>Description<textarea name="description">${esc(x.description||'')}</textarea></label><button class="btn primary full" type="submit">Enregistrer</button></form>`)};
+  $('#addTrade').onclick=()=>{modal(`<h2>Ajouter un sous-corps de métier</h2><form id="tradeForm"><label>Projet<select name="project_id" required>${opts(S.data.projects)}</select></label><label>Corps principal<select id="singleTradePhase" name="phase">${TRADE_PHASES.map(p=>`<option value="${esc(p.key)}">${esc(p.label)}</option>`).join('')}</select></label><label>Recherche<input id="singleTradeSearch" type="search" placeholder="Rechercher..."></label><div id="singleTradeLibrary" class="single-trade-library"></div><label>Sous-corps sélectionné ou personnalisé<input id="tradeNameInput" name="name" required></label><label>Description<textarea name="description"></textarea></label><button class="btn primary full" type="submit">Ajouter</button></form>`);const ps=$('#singleTradePhase'),s=$('#singleTradeSearch'),lib=$('#singleTradeLibrary'),inp=$('#tradeNameInput');const render=()=>{const p=TRADE_PHASES.find(x=>x.key===ps.value)||TRADE_PHASES[0],q=(s.value||'').toLowerCase();lib.innerHTML=p.trades.filter(t=>!q||t.toLowerCase().includes(q)).map(t=>`<button type="button" class="single-trade-choice" data-name="${esc(t)}">${esc(t)}</button>`).join('');lib.querySelectorAll('.single-trade-choice').forEach(b=>b.onclick=()=>{inp.value=b.dataset.name;lib.querySelectorAll('.single-trade-choice').forEach(x=>x.classList.toggle('selected',x===b))})};ps.onchange=render;s.oninput=render;render()};
+  document.querySelectorAll('.trade-row').forEach(r=>r.onclick=e=>{if(!e.target.closest('button'))openEdit(r.dataset.id)});document.querySelectorAll('.edit-trade').forEach(b=>b.onclick=e=>{e.stopPropagation();openEdit(b.dataset.id)});
+  document.querySelectorAll('.print-trade').forEach(b=>b.onclick=e=>{e.stopPropagation();const x=S.data.trades.find(t=>t.id===b.dataset.id);if(!x)return;printA4(`Corps de métier : ${x.name}`,S.data.projects.find(p=>p.id===x.project_id)?.name||'',`<table><tr><th>Corps principal</th><td>${esc(phaseLabel(x.phase||phaseForTrade(x.name)))}</td></tr><tr><th>Sous-corps</th><td>${esc(x.name)}</td></tr><tr><th>Description</th><td>${esc(x.description||'')}</td></tr></table>`)});
+  $('#printTrades').onclick=()=>{const sorted=[...(S.data.trades||[])].sort((a,b)=>String(a.phase||phaseForTrade(a.name)).localeCompare(String(b.phase||phaseForTrade(b.name)))||a.name.localeCompare(b.name));printA4('Corps de métier',S.session.company?.name||'',`<table><tr><th>Projet</th><th>Corps principal</th><th>Sous-corps</th><th>Description</th></tr>${sorted.map(x=>`<tr><td>${esc(S.data.projects.find(p=>p.id===x.project_id)?.name||'')}</td><td>${esc(phaseLabel(x.phase||phaseForTrade(x.name)))}</td><td>${esc(x.name)}</td><td>${esc(x.description||'')}</td></tr>`).join('')}</table>`)};
+  document.querySelectorAll('.del-trade').forEach(b=>b.onclick=e=>{e.stopPropagation();confirmBox('Supprimer ce métier ?',()=>post('/api/save',{entity:'trade',action:'delete',record:{id:b.dataset.id}}))});
 }
-
-document.addEventListener("submit",async e=>{
-  if(e.target.id==="tradeForm"){
-    e.preventDefault();
-    try{
-      await post("/api/save",{entity:"trade",action:"create",record:fd(e.target)});
-      closeModal();
-      await reload();
-      trades();
-      toast("Métier ajouté");
-    }catch(x){
-      toast(x.message,true);
-    }finally{
-      releaseForm(e.target);
-    }
-  }
+document.addEventListener('submit',async e=>{
+  if(e.target.id==='tradeForm'){e.preventDefault();try{await post('/api/save',{entity:'trade',action:'create',record:fd(e.target)});closeModal();await reload();trades();toast('Métier ajouté')}catch(x){toast(x.message,true)}finally{releaseForm(e.target)}}
+  if(e.target.id==='tradeEditForm'){e.preventDefault();try{await post('/api/save',{entity:'trade',action:'update',record:{id:e.target.dataset.id,...fd(e.target)}});closeModal();await reload();trades();toast('Métier modifié')}catch(x){toast(x.message,true)}finally{releaseForm(e.target)}}
 });
 function suppliers(){$("#content").innerHTML=`<div class="panel"><div class="panelhead"><h2>Fournisseurs</h2><button id="addSupplier" class="btn primary">+ Ajouter</button></div>${table(["Nom","Contact","Ville","Spécialité","Actions"],S.data.suppliers.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.phone||"")}</td><td>${esc(x.city||"")}</td><td>${esc(x.specialty||"")}</td><td>${S.session.user.role==="admin"?`<button class="btn small danger del-sup" data-id="${x.id}">Supprimer</button>`:""}</td></tr>`))}</div>`;$("#addSupplier").onclick=()=>modal(`<h2>Nouveau fournisseur</h2><form id="supplierForm" class="formgrid"><label>Nom<input name="name" required></label><label>Téléphone<input name="phone"></label><label>E-mail<input name="email" type="email"></label><label>Ville<input name="city"></label><label>Adresse<input name="address"></label><label>Spécialité<input name="specialty"></label><label class="span2">Notes<textarea name="notes"></textarea></label><button class="btn primary span2">Ajouter</button></form>`);document.querySelectorAll(".del-sup").forEach(b=>b.onclick=()=>confirmBox("Supprimer ce fournisseur ?",()=>post("/api/save",{entity:"supplier",action:"delete",record:{id:b.dataset.id}})))}
 document.addEventListener("submit",async e=>{if(e.target.id==="supplierForm"){e.preventDefault();try{await post("/api/save",{entity:"supplier",action:"create",record:fd(e.target)});closeModal();await reload();suppliers();toast("Fournisseur ajouté")}catch(x){toast(x.message,true)}}});

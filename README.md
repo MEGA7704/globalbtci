@@ -296,3 +296,7 @@ en début/fin de nom.
 - compteur de métiers par projet ;
 - page Corps de métier avec bibliothèque rapide et saisie personnalisée ;
 - les métiers restent disponibles dans dépenses, main-d'œuvre, rapports et tableau de bord.
+
+
+## V26 — Métiers hiérarchiques, lignes modifiables et PDF A4
+11 phases principales du chantier, sous-corps sélectionnables, métiers personnalisés, modification par clic sur ligne, impression A4 des projets et métiers.

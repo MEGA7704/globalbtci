@@ -140,6 +140,7 @@ async function ensureSchema(env){
   await ensureColumn(env,"projects","created_at","TEXT");
   await ensureColumn(env,"projects","updated_at","TEXT");
 
+  await ensureColumn(env,"trades","phase","TEXT");
   await ensureColumn(env,"trades","description","TEXT");
   await ensureColumn(env,"trades","created_at","TEXT");
 
@@ -457,11 +458,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"25.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"26.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"25.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"26.0.0"},500);
   }
 }
 async function login(req,env){
@@ -749,11 +750,18 @@ async function saveCompany(req,env,s,entity,action,r){
 
       const id=crypto.randomUUID();
       await env.DB.prepare(
-        "INSERT INTO trades(id,company_id,project_id,name,description) VALUES(?,?,?,?,?)"
-      ).bind(id,c,projectId,tradeName,text(r.description,500)).run();
+        "INSERT INTO trades(id,company_id,project_id,name,description,phase) VALUES(?,?,?,?,?,?)"
+      ).bind(id,c,projectId,tradeName,text(r.description,500),text(r.phase,80)||null).run();
 
       await audit(env,actor,"CREATE_TRADE","trade",id,ip(req),{project_id:projectId,name:tradeName});
       return json({ok:true,id})
+    }
+    if(action==="update"){
+      const existing=await env.DB.prepare("SELECT id FROM trades WHERE id=? AND company_id=?").bind(r.id,c).first();if(!existing)return json({error:"Métier introuvable"},404);
+      const projectId=text(r.project_id,100),tradeName=text(r.name,120);
+      const duplicate=await env.DB.prepare("SELECT id FROM trades WHERE company_id=? AND project_id=? AND lower(trim(name))=lower(trim(?)) AND id<>? LIMIT 1").bind(c,projectId,tradeName,r.id).first();if(duplicate)return json({error:"Ce métier existe déjà pour ce projet",code:"TRADE_ALREADY_EXISTS"},409);
+      await env.DB.prepare("UPDATE trades SET project_id=?,name=?,description=?,phase=? WHERE id=? AND company_id=?").bind(projectId,tradeName,text(r.description,500),text(r.phase,80)||null,r.id,c).run();
+      await audit(env,actor,"UPDATE_TRADE","trade",r.id,ip(req),{project_id:projectId,name:tradeName,phase:text(r.phase,80)});return json({ok:true})
     }
     if(action==="delete"&&actor.role==="admin"){
       await env.DB.prepare("DELETE FROM trades WHERE id=? AND company_id=?").bind(r.id,c).run();
@@ -843,7 +851,7 @@ async function cryptoHealth(req,env){
     const test=await makeMemberCredential("GlobalBT-Test-2026!");
     return json({
       ok:true,
-      app_version:"25.0.0",
+      app_version:"26.0.0",
       algorithm:"PBKDF2-SHA-256",
       iterations:test.password_iterations,
       elapsed_ms:Date.now()-started
@@ -851,7 +859,7 @@ async function cryptoHealth(req,env){
   }catch(e){
     return json({
       ok:false,
-      app_version:"25.0.0",
+      app_version:"26.0.0",
       code:e?.message||"PASSWORD_HASH_FAILED",
       elapsed_ms:Date.now()-started
     },500);
@@ -885,7 +893,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"25.0.0",
+    app_version:"26.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,
