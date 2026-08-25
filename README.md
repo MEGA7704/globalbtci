@@ -145,3 +145,14 @@ Administrateurs et Agents continuent d'utiliser `auth_credentials_v2` dans D1.
 Pour changer le mot de passe Super Admin, remplacer le secret Cloudflare
 `SUPERADMIN_INITIAL_PASSWORD`, puis redéployer. Cela évite toute dépendance aux
 anciennes tables d'authentification.
+
+
+## V15 — Correction inscription Administrateur
+
+- compatibilité automatique avec les anciennes tables `companies`;
+- ajout sécurisé des colonnes `city`, `code`, `phone`, `email`, `address` si absentes;
+- insertion entreprise dynamique selon le schéma D1 réellement présent;
+- création Administrateur puis credential V2;
+- nettoyage automatique si une étape échoue;
+- le message d'erreur indique désormais l'étape (`company_insert`, `user_insert`, `credential_insert`, etc.) et un code non sensible;
+- `/api/health` retourne `company_schema_ready`.

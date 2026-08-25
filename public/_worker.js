@@ -49,6 +49,14 @@ async function ensureSchema(env){
   await ensureColumn(env,"users","created_by","TEXT");
   await ensureColumn(env,"users","updated_at","TEXT");
 
+  // Compatibilité avec les anciennes versions de la table companies.
+  await ensureColumn(env,"companies","code","TEXT");
+  await ensureColumn(env,"companies","phone","TEXT");
+  await ensureColumn(env,"companies","email","TEXT");
+  await ensureColumn(env,"companies","city","TEXT");
+  await ensureColumn(env,"companies","address","TEXT");
+  await ensureColumn(env,"companies","updated_at","TEXT");
+
 }
 async function migrateLegacyCredentials(env){
   const c=await columns(env,"users");
@@ -61,6 +69,36 @@ async function migrateLegacyCredentials(env){
     await env.DB.prepare("UPDATE users SET password_hash='MIGRATED',password_salt='MIGRATED' WHERE id=?").bind(r.id).run();
   }
 }
+async function insertCompanyProfile(env,c){
+  const info=await tableInfo(env,"companies"),names=[],vals=[],qs=[],supplied=new Set();
+  const has=n=>info.some(x=>x.name===n);
+  const add=(n,v)=>{if(has(n)){names.push(n);vals.push(v);qs.push("?");supplied.add(n)}};
+
+  add("id",c.id);
+  add("name",c.name);
+  add("code",c.code||null);
+  add("phone",c.phone||"");
+  add("email",c.email||null);
+  add("city",c.city||"");
+  add("address",c.address||"");
+  add("plan",c.plan||"free");
+  add("plan_started_at",c.plan_started_at);
+  add("plan_expires_at",c.plan_expires_at);
+  add("status",c.status||"active");
+  add("created_at",now());
+  add("updated_at",now());
+
+  const bad=info.filter(x =>
+    Number(x.notnull)===1 &&
+    x.dflt_value==null &&
+    Number(x.pk)!==1 &&
+    !supplied.has(x.name)
+  );
+  if(bad.length)throw new Error("UNSUPPORTED_COMPANY_COLUMNS:"+bad.map(x=>x.name).join(","));
+
+  await env.DB.prepare(`INSERT INTO companies(${names.join(",")}) VALUES(${qs.join(",")})`).bind(...vals).run();
+}
+
 async function insertUserProfile(env,u){
   const info=await tableInfo(env,"users"),names=[],vals=[],qs=[],supplied=new Set();
   const add=(n,v)=>{if(info.some(x=>x.name===n)){names.push(n);vals.push(v);qs.push("?");supplied.add(n)}};
@@ -187,11 +225,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"14.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"15.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"14.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"15.0.0"},500);
   }
 }
 async function login(req,env){
@@ -265,14 +303,119 @@ async function login(req,env){
 }
 
 async function register(req,env){
-  if(req.method!=="POST")return json({error:"Méthode interdite"},405);await ensureSchema(env);const b=await body(req),em=email(b.email),pw=String(b.password||"");
-  if(!text(b.company_name,180)||!text(b.full_name,160)||!em)return json({error:"Entreprise, nom et e-mail obligatoires"},400);if(pw.length<12)return json({error:"Mot de passe : 12 caractères minimum"},400);
-  if(await env.DB.prepare("SELECT id FROM users WHERE lower(email)=lower(?)").bind(em).first())return json({error:"Cette adresse e-mail existe déjà"},409);
-  const cid=crypto.randomUUID(),uid=crypto.randomUUID(),start=now(),end=plusDays(21);
-  await env.DB.prepare("INSERT INTO companies(id,name,city,plan,plan_started_at,plan_expires_at,status) VALUES(?,?,?,'free',?,?,'active')").bind(cid,text(b.company_name,180),text(b.city,120),start,end).run();
-  await insertUserProfile(env,{id:uid,company_id:cid,email:em,full_name:text(b.full_name,160),phone:text(b.phone,50),role:"admin",created_by:uid});await setCredentialV2(env,uid,pw);
-  const u=await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(uid).first(),s=await makeSession(env,u);await audit(env,u,"SELF_REGISTER","company",cid,ip(req),{plan:"free"});
-  return json({authenticated:true,csrf:s.csrf,user:{id:uid,email:em,full_name:u.full_name,phone:u.phone,role:"admin"},company:{id:cid,name:text(b.company_name,180),city:text(b.city,120),plan:"free",plan_started_at:start,plan_expires_at:end,status:"active"},businessPaymentUrl:env.BUSINESS_PAYMENT_URL},201,{"set-cookie":setCookie(s.t)});
+  if(req.method!=="POST")return json({error:"Méthode interdite"},405);
+
+  let stage="start";
+  let cid=null,uid=null;
+  try{
+    stage="schema";
+    await ensureSchema(env);
+
+    stage="input";
+    const b=await body(req);
+    const em=email(b.email);
+    const pw=String(b.password||"");
+    const companyName=text(b.company_name,180);
+    const fullName=text(b.full_name,160);
+
+    if(!companyName||!fullName||!em){
+      return json({error:"Entreprise, nom et e-mail obligatoires"},400);
+    }
+    if(pw.length<12){
+      return json({error:"Mot de passe : 12 caractères minimum"},400);
+    }
+
+    stage="duplicate_check";
+    if(await env.DB.prepare("SELECT id FROM users WHERE lower(email)=lower(?)").bind(em).first()){
+      return json({error:"Cette adresse e-mail existe déjà"},409);
+    }
+
+    cid=crypto.randomUUID();
+    uid=crypto.randomUUID();
+    const startDate=now();
+    const endDate=plusDays(21);
+
+    stage="company_insert";
+    await insertCompanyProfile(env,{
+      id:cid,
+      name:companyName,
+      city:text(b.city,120),
+      plan:"free",
+      plan_started_at:startDate,
+      plan_expires_at:endDate,
+      status:"active"
+    });
+
+    stage="user_insert";
+    await insertUserProfile(env,{
+      id:uid,
+      company_id:cid,
+      email:em,
+      full_name:fullName,
+      phone:text(b.phone,50),
+      role:"admin",
+      created_by:uid,
+      must_change_password:false
+    });
+
+    stage="credential_insert";
+    await setCredentialV2(env,uid,pw);
+
+    stage="session";
+    const u=await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(uid).first();
+    if(!u)throw new Error("USER_NOT_FOUND_AFTER_INSERT");
+    const s=await makeSession(env,u);
+
+    stage="audit";
+    await audit(env,u,"SELF_REGISTER","company",cid,ip(req),{plan:"free"});
+
+    return json({
+      authenticated:true,
+      csrf:s.csrf,
+      user:{id:uid,email:em,full_name:u.full_name,phone:u.phone,role:"admin",must_change_password:0},
+      company:{
+        id:cid,
+        name:companyName,
+        city:text(b.city,120),
+        plan:"free",
+        plan_started_at:startDate,
+        plan_expires_at:endDate,
+        status:"active"
+      },
+      businessPaymentUrl:env.BUSINESS_PAYMENT_URL
+    },201,{"set-cookie":setCookie(s.t)});
+  }catch(e){
+    const msg=String(e?.message||"");
+    console.error(JSON.stringify({event:"register_error",stage,message:msg,stack:e?.stack||""}));
+
+    // Nettoyage des créations partielles. Ne jamais laisser une entreprise orpheline.
+    try{
+      if(uid){
+        await env.DB.prepare("DELETE FROM auth_credentials_v2 WHERE user_id=?").bind(uid).run();
+        await env.DB.prepare("DELETE FROM users WHERE id=?").bind(uid).run();
+      }
+      if(cid){
+        await env.DB.prepare("DELETE FROM companies WHERE id=?").bind(cid).run();
+      }
+    }catch(cleanErr){
+      console.error(JSON.stringify({event:"register_cleanup_error",message:cleanErr?.message||String(cleanErr)}));
+    }
+
+    let code="REGISTER_ERROR";
+    if(msg.includes("UNSUPPORTED_COMPANY_COLUMNS"))code=msg;
+    else if(msg.includes("UNSUPPORTED_USER_COLUMNS"))code=msg;
+    else if(msg.includes("no such column"))code="MISSING_COLUMN";
+    else if(msg.includes("NOT NULL constraint"))code="NOT_NULL_CONSTRAINT";
+    else if(msg.includes("UNIQUE constraint"))code="UNIQUE_CONSTRAINT";
+    else if(msg.includes("CHECK constraint"))code="CHECK_CONSTRAINT";
+    else if(msg.includes("FOREIGN KEY constraint"))code="FOREIGN_KEY_CONSTRAINT";
+
+    return json({
+      error:"Inscription Administrateur impossible",
+      stage,
+      code
+    },500);
+  }
 }
 
 async function session(req,env){const a=await auth(req,env);if(a.error)return a.error;return json({authenticated:true,csrf:a.s.s.csrf,user:a.s.u,company:a.s.c,businessPaymentUrl:env.BUSINESS_PAYMENT_URL})}
@@ -377,11 +520,13 @@ async function changePassword(req,env){
   return json({ok:true});
 }
 async function health(req,env){
-  let schema=false,superadmin=false;
+  let schema=false,superadmin=false,companySchema=false;
   try{
     if(env.DB){
       const r=await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").first();
       schema=!!r;
+      const cr=await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='companies'").first();
+      companySchema=!!cr;
       if(schema){
         const u=await env.DB.prepare("SELECT id FROM users WHERE role='superadmin' AND status!='deleted' LIMIT 1").first();
         superadmin=!!u;
@@ -391,13 +536,13 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"14.0.0",
+    app_version:"15.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,
     superadmin_password_configured:!!env.SUPERADMIN_INITIAL_PASSWORD,
     session_pepper_configured:!!env.SESSION_PEPPER,
-    schema_ready:schema,
+    schema_ready:schema,company_schema_ready:companySchema,
     superadmin_ready:superadmin,
     superadmin_credential_ready:superadmin&&secretReady,
     superadmin_auth:"cloudflare_secret",
