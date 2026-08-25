@@ -10,7 +10,7 @@
 
 ## Fonctionnalités incluses  
 
-- Authentification serveur `POST /api/login`
+- Authentification serveur `POST /api/login`  
 - PBKDF2-SHA-256 exclusivement dans `public/_worker.js`
 - cookies HttpOnly + Secure + SameSite=Lax
 - sessions KV
