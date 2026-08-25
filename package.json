@@ -1,6 +1,6 @@
 {
   "name": "global-bt-cloudflare",
-  "version": "19.0.0",
+  "version": "20.0.0",
   "private": true,
   "description": "GLOBAL BT - Gestion de chantier Cloudflare Pages + D1 + KV",
   "scripts": {

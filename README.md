@@ -216,3 +216,17 @@ Elle est exécutée au bootstrap puis mémorisée dans KV sous
 
 L'inscription prépare aussi le hash du mot de passe avant les écritures D1,
 puis stocke le credential membre dans KV.
+
+
+## V20 — Correction PBKDF2 à l'inscription
+
+L'échec `credential_prepare` se produit avant toute écriture D1/KV.
+
+Correction :
+- nouveaux credentials : PBKDF2-SHA-256 à 100 000 itérations ;
+- anciens credentials : leur valeur `password_iterations` reste respectée à la connexion ;
+- nouvelle route `/api/crypto-health` pour tester uniquement le moteur cryptographique ;
+- code d'erreur explicite `PASSWORD_HASH_FAILED`.
+
+Après déploiement, ouvrir `/api/crypto-health`.
+Le résultat attendu est `ok: true`.

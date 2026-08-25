@@ -1,5 +1,5 @@
 const enc=new TextEncoder();
-const ITER=210000, SESSION_TTL=28800, RATE_TTL=900, MAX_FAIL=5;
+const ITER=210000, NEW_CRED_ITER=100000, SESSION_TTL=28800, RATE_TTL=900, MAX_FAIL=5;
 
 function json(data,status=200,headers={}){return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff",...headers}})}
 function ip(req){return req.headers.get("CF-Connecting-IP")||"0.0.0.0"}
@@ -23,9 +23,24 @@ async function kvCredentialKey(userId){
 async function makeMemberCredential(password){
   const p=String(password||"");
   if(p.length<12)throw new Error("PASSWORD_TOO_SHORT");
-  const salt=b64(bytes(16));
-  const hash=await hashPassword(p,salt,ITER);
-  return {password_hash:hash,password_salt:salt,password_iterations:ITER,updated_at:now()};
+  try{
+    const salt=b64(bytes(16));
+    const hash=await hashPassword(p,salt,NEW_CRED_ITER);
+    if(!hash||typeof hash!=="string")throw new Error("EMPTY_PASSWORD_HASH");
+    return {
+      password_hash:hash,
+      password_salt:salt,
+      password_iterations:NEW_CRED_ITER,
+      updated_at:now()
+    };
+  }catch(e){
+    console.error(JSON.stringify({
+      event:"credential_prepare_error",
+      name:e?.name||"",
+      message:e?.message||String(e)
+    }));
+    throw new Error("PASSWORD_HASH_FAILED");
+  }
 }
 async function putMemberCredentialKV(env,userId,credential){
   await env.GLOBAL_BT_KV.put(await kvCredentialKey(userId),JSON.stringify(credential));
@@ -407,11 +422,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"19.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"20.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"19.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"20.0.0"},500);
   }
 }
 async function login(req,env){
@@ -587,7 +602,9 @@ async function register(req,env){
     }
 
     let code="REGISTER_ERROR";
-    if(msg.includes("UNSUPPORTED_COMPANY_COLUMNS"))code=msg;
+    if(msg.includes("PASSWORD_HASH_FAILED"))code="PASSWORD_HASH_FAILED";
+    else if(msg.includes("PASSWORD_TOO_SHORT"))code="PASSWORD_TOO_SHORT";
+    else if(msg.includes("UNSUPPORTED_COMPANY_COLUMNS"))code=msg;
     else if(msg.includes("UNSUPPORTED_USER_COLUMNS"))code=msg;
     else if(msg.includes("no such column"))code="MISSING_COLUMN";
     else if(msg.includes("NOT NULL constraint"))code="NOT_NULL_CONSTRAINT";
@@ -732,6 +749,27 @@ async function changePassword(req,env){
   await audit(env,a.s.u,"CHANGE_PASSWORD","user",a.s.u.id,ip(req));
   return json({ok:true});
 }
+async function cryptoHealth(req,env){
+  const started=Date.now();
+  try{
+    const test=await makeMemberCredential("GlobalBT-Test-2026!");
+    return json({
+      ok:true,
+      app_version:"20.0.0",
+      algorithm:"PBKDF2-SHA-256",
+      iterations:test.password_iterations,
+      elapsed_ms:Date.now()-started
+    });
+  }catch(e){
+    return json({
+      ok:false,
+      app_version:"20.0.0",
+      code:e?.message||"PASSWORD_HASH_FAILED",
+      elapsed_ms:Date.now()-started
+    },500);
+  }
+}
+
 async function health(req,env){
   let schema=false,superadmin=false,companySchema=false;
   try{
@@ -749,7 +787,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"19.0.0",
+    app_version:"20.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,
@@ -759,13 +797,14 @@ async function health(req,env){
     superadmin_ready:superadmin,
     superadmin_credential_ready:superadmin&&secretReady,
     superadmin_auth:"cloudflare_secret",
-    member_auth_store:"GLOBAL_BT_KV / cred:v1:<user_id>",schema_repair_version:"19"
+    member_auth_store:"GLOBAL_BT_KV / cred:v1:<user_id>",schema_repair_version:"20"
   });
 }
 
 async function route(req,env){
   const p=new URL(req.url).pathname;
   if(p==="/api/health")return health(req,env);
+  if(p==="/api/crypto-health")return cryptoHealth(req,env);
   if(p==="/api/bootstrap")return bootstrap(req,env);
   if(p==="/api/login")return login(req,env);
   if(p==="/api/register")return register(req,env);
