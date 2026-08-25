@@ -137,3 +137,19 @@ Aucun hash ni sel n'est envoyé au navigateur. Le mot de passe est traité uniqu
 - Le mot de passe est recalculé depuis le secret Cloudflare et stocké uniquement sous forme de hash.
 - `password_version` est incrémenté lors d'une réparation afin d'invalider les anciennes sessions.
 - Les autres entreprises, projets et données D1 ne sont pas supprimés.
+
+
+## V5 — Bootstrap legacy + déblocage Super Admin
+
+Corrections :
+- migration automatique des colonnes absentes dans les anciennes tables D1 ;
+- réparation/création Super Admin indépendante du journal d'audit ;
+- suppression automatique du rate-limit KV pour l'adresse Super Admin et l'IP du bootstrap après réussite ;
+- `/api/bootstrap-status` fournit un diagnostic non sensible du schéma et de l'existence du compte ;
+- codes d'erreur bootstrap lisibles sans exposer de secret.
+
+Après déploiement :
+1. ouvrir `/api/health`;
+2. ouvrir `/api/bootstrap-status`;
+3. ouvrir la page d'accueil pour déclencher `POST /api/bootstrap`;
+4. si nécessaire, recharger `/api/bootstrap-status`.

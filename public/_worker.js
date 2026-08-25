@@ -107,6 +107,41 @@ async function setPassword(env,actor,target,newPassword,req){
 }
 
 
+
+async function tableColumns(env,table){
+  const r=await env.DB.prepare(`PRAGMA table_info(${table})`).all();
+  return new Set((r.results||[]).map(x=>x.name));
+}
+async function ensureColumn(env,table,name,definition){
+  const cols=await tableColumns(env,table);
+  if(!cols.has(name)){
+    await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`).run();
+  }
+}
+async function repairLegacySchema(env){
+  // CREATE TABLE IF NOT EXISTS ne modifie pas une ancienne table existante.
+  // Ajouter explicitement les colonnes introduites dans les versions récentes.
+  await ensureColumn(env,"users","phone","TEXT");
+  await ensureColumn(env,"users","password_iterations","INTEGER NOT NULL DEFAULT 210000");
+  await ensureColumn(env,"users","password_version","INTEGER NOT NULL DEFAULT 1");
+  await ensureColumn(env,"users","must_change_password","INTEGER NOT NULL DEFAULT 0");
+  await ensureColumn(env,"users","created_by","TEXT");
+  await ensureColumn(env,"users","updated_at","TEXT");
+  await ensureColumn(env,"companies","code","TEXT");
+  await ensureColumn(env,"companies","phone","TEXT");
+  await ensureColumn(env,"companies","email","TEXT");
+  await ensureColumn(env,"companies","address","TEXT");
+  await ensureColumn(env,"companies","city","TEXT");
+  await ensureColumn(env,"companies","updated_at","TEXT");
+}
+async function clearSuperadminRateLimit(env,req,email){
+  const addr=clientIp(req);
+  await Promise.all([
+    env.GLOBAL_BT_KV.delete(`rl:acct:${normEmail(email)}`),
+    env.GLOBAL_BT_KV.delete(`rl:ip:${addr}`)
+  ]);
+}
+
 async function ensureSchema(env){
   const statements = [
     `CREATE TABLE IF NOT EXISTS companies (
@@ -257,7 +292,30 @@ async function ensureSchema(env){
   for(const sql of statements){
     await env.DB.prepare(sql).run();
   }
+  await repairLegacySchema(env);
 }
+
+async function bootstrapStatus(req,env){
+  if(!env.DB)return response({ok:false,code:"DB_BINDING_MISSING"},503);
+  try{
+    await ensureSchema(env);
+    const cols=[...(await tableColumns(env,"users"))].sort();
+    const superRow=await env.DB.prepare("SELECT id,email,role,status,password_version FROM users WHERE role='superadmin' LIMIT 1").first();
+    const configuredEmail=normEmail(env.SUPERADMIN_EMAIL||"");
+    const emailRow=configuredEmail?await env.DB.prepare("SELECT id,email,role,status,password_version FROM users WHERE lower(email)=lower(?) LIMIT 1").bind(configuredEmail).first():null;
+    return response({
+      ok:true,
+      users_columns:cols,
+      superadmin_exists:!!superRow,
+      configured_email_exists:!!emailRow,
+      configured_email_role:emailRow?.role||null,
+      configured_email_status:emailRow?.status||null
+    });
+  }catch(e){
+    return response({ok:false,error:"Diagnostic D1 impossible",code:"DIAGNOSTIC_D1_ERROR"},500);
+  }
+}
+
 async function health(req,env){
   const result = {
     ok:true,
@@ -282,29 +340,31 @@ async function health(req,env){
 
 async function bootstrap(req,env){
   if(req.method!=="POST")return response({error:"Méthode interdite"},405);
-  if(!env.DB)return response({error:"Binding D1 DB manquant dans Cloudflare Pages"},503);
-  if(!env.GLOBAL_BT_KV)return response({error:"Binding KV GLOBAL_BT_KV manquant dans Cloudflare Pages"},503);
+  if(!env.DB)return response({error:"Binding D1 DB manquant"},503);
+  if(!env.GLOBAL_BT_KV)return response({error:"Binding KV GLOBAL_BT_KV manquant"},503);
   if(!env.SUPERADMIN_EMAIL)return response({error:"Secret SUPERADMIN_EMAIL manquant"},503);
   if(!env.SUPERADMIN_INITIAL_PASSWORD)return response({error:"Secret SUPERADMIN_INITIAL_PASSWORD manquant"},503);
   if(!env.SESSION_PEPPER)return response({error:"Secret SESSION_PEPPER manquant"},503);
 
+  const configuredEmail=normEmail(env.SUPERADMIN_EMAIL);
+
   try{
     await ensureSchema(env);
 
-    const configuredEmail=normEmail(env.SUPERADMIN_EMAIL);
+    // Chercher d'abord par rôle, ensuite par e-mail. Cela couvre toutes les anciennes versions.
     const current=await env.DB.prepare(
       "SELECT * FROM users WHERE role='superadmin' AND status!='deleted' LIMIT 1"
     ).first();
 
-    // Ne jamais écraser un Super Admin existant à chaque démarrage.
     if(current){
-      return response({ok:true,alreadyInitialized:true});
+      // Un Super Admin existe. Ne pas écraser automatiquement son mot de passe.
+      // En revanche, débloquer les limites de connexion de l'adresse configurée.
+      await clearSuperadminRateLimit(env,req,current.email||configuredEmail);
+      return response({ok:true,alreadyInitialized:true,superadmin_ready:true});
     }
 
-    // Si l'adresse configurée existe déjà sous un autre rôle, la réparer
-    // au lieu de provoquer une erreur UNIQUE(email).
     const sameEmail=await env.DB.prepare(
-      "SELECT * FROM users WHERE email=? LIMIT 1"
+      "SELECT * FROM users WHERE lower(email)=lower(?) LIMIT 1"
     ).bind(configuredEmail).first();
 
     const salt=randomToken(16);
@@ -312,42 +372,69 @@ async function bootstrap(req,env){
 
     if(sameEmail){
       const nextVersion=Number(sameEmail.password_version||1)+1;
-      await env.DB.prepare(`UPDATE users
-        SET company_id=NULL,
-            full_name='Super Administrateur',
-            role='superadmin',
-            password_hash=?,
-            password_salt=?,
-            password_iterations=?,
-            password_version=?,
-            must_change_password=0,
-            status='active',
-            updated_at=CURRENT_TIMESTAMP
-        WHERE id=? AND email=?`)
-        .bind(hash,salt,ITERATIONS,nextVersion,sameEmail.id,configuredEmail).run();
 
-      await audit(env,{id:sameEmail.id,company_id:null},"SUPERADMIN_REPAIRED","user",sameEmail.id,clientIp(req),{email:configuredEmail});
-      return response({ok:true,repaired:true});
+      // Requête volontairement limitée aux colonnes garanties/réparées.
+      await env.DB.prepare(`UPDATE users SET
+          company_id=NULL,
+          email=?,
+          full_name='Super Administrateur',
+          role='superadmin',
+          password_hash=?,
+          password_salt=?,
+          password_iterations=?,
+          password_version=?,
+          must_change_password=0,
+          status='active',
+          updated_at=CURRENT_TIMESTAMP
+        WHERE id=?`)
+        .bind(configuredEmail,hash,salt,ITERATIONS,nextVersion,sameEmail.id).run();
+
+      await clearSuperadminRateLimit(env,req,configuredEmail);
+
+      // L'audit ne doit jamais faire échouer la réparation d'authentification.
+      try{
+        await audit(env,{id:sameEmail.id,company_id:null},"SUPERADMIN_REPAIRED","user",sameEmail.id,clientIp(req),{email:configuredEmail});
+      }catch(e){
+        console.error(JSON.stringify({event:"bootstrap_audit_warning",message:e?.message||String(e)}));
+      }
+
+      return response({ok:true,repaired:true,superadmin_ready:true});
     }
 
     const id=crypto.randomUUID();
     await env.DB.prepare(`INSERT INTO users(
-      id,company_id,email,full_name,role,password_hash,password_salt,
-      password_iterations,password_version,must_change_password,status
-    ) VALUES(?,NULL,?,'Super Administrateur','superadmin',?,?,?,1,0,'active')`)
+        id,company_id,email,full_name,role,password_hash,password_salt,
+        password_iterations,password_version,must_change_password,status,created_by
+      ) VALUES(?,NULL,?,'Super Administrateur','superadmin',?,?,?,1,0,'active',NULL)`)
       .bind(id,configuredEmail,hash,salt,ITERATIONS).run();
 
-    await audit(env,{id,company_id:null},"SUPERADMIN_BOOTSTRAP","user",id,clientIp(req),{email:configuredEmail});
-    return response({ok:true,created:true});
+    await clearSuperadminRateLimit(env,req,configuredEmail);
+
+    try{
+      await audit(env,{id,company_id:null},"SUPERADMIN_BOOTSTRAP","user",id,clientIp(req),{email:configuredEmail});
+    }catch(e){
+      console.error(JSON.stringify({event:"bootstrap_audit_warning",message:e?.message||String(e)}));
+    }
+
+    return response({ok:true,created:true,superadmin_ready:true});
   }catch(e){
     console.error(JSON.stringify({
       event:"superadmin_bootstrap_error",
       message:e?.message||String(e),
       stack:e?.stack||""
     }));
+
+    // Code de diagnostic non sensible pour identifier la famille d'erreur sans exposer SQL/secrets.
+    const msg=String(e?.message||"");
+    let code="BOOTSTRAP_D1_ERROR";
+    if(msg.includes("no such column"))code="LEGACY_SCHEMA_COLUMN";
+    else if(msg.includes("UNIQUE constraint"))code="EMAIL_CONFLICT";
+    else if(msg.includes("NOT NULL constraint"))code="LEGACY_SCHEMA_REQUIRED";
+    else if(msg.includes("no such table"))code="SCHEMA_MISSING";
+
     return response({
       error:"Initialisation Super Admin impossible",
-      detail:"Le schéma D1 est disponible mais le compte Super Admin n'a pas pu être créé ou réparé."
+      code
     },500);
   }
 }
@@ -770,6 +857,7 @@ async function superAudit(req,env){
 async function route(req,env){
   const p=new URL(req.url).pathname;
   if(p==="/api/health")return health(req,env);
+  if(p==="/api/bootstrap-status")return bootstrapStatus(req,env);
   if(p==="/api/bootstrap")return bootstrap(req,env);
   if(p==="/api/register")return register(req,env);
   if(p==="/api/login")return login(req,env);

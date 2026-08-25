@@ -16,7 +16,7 @@ async function api(path,opts={}){
   if(state.session?.csrf&&opts.method&&opts.method!=="GET")headers["X-CSRF-Token"]=state.session.csrf;
   const r=await fetch(path,{credentials:"same-origin",...opts,headers});
   const b=await r.json().catch(()=>({}));
-  if(!r.ok)throw new Error(b.error||"Erreur serveur");
+  if(!r.ok){const e=new Error(b.error||"Erreur serveur");e.code=b.code||"";throw e;}
   return b;
 }
 function post(path,obj){return api(path,{method:"POST",body:JSON.stringify(obj)})}
@@ -35,7 +35,7 @@ async function init(){
   try{
     await post("/api/bootstrap",{});
   }catch(err){
-    $("#loginMessage").innerHTML=`Initialisation : ${esc(err.message)}<br><small>D1, KV et les secrets seront contrôlés côté serveur.</small>`;
+    $("#loginMessage").innerHTML=`Initialisation : ${esc(err.message)}${err.code?` (${esc(err.code)})`:""}<br><small>Ouvrez /api/bootstrap-status après le déploiement si le problème persiste.</small>`;
   }
   try{state.session=await api("/api/session");await enter()}catch{}
 }
