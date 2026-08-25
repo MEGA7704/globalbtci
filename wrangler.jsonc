@@ -19,6 +19,7 @@
   ],
   "vars": {
     "APP_NAME": "GLOBAL BT",
+    "STANDARD_PAYMENT_URL": "https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=2100",
     "BUSINESS_PAYMENT_URL": "https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=20600"
   }
 }

@@ -10,6 +10,10 @@ function qty(v){const n=Number(v||0);return Number.isFinite(n)&&n>=0?n:0}
 function today(v){return /^\d{4}-\d{2}-\d{2}$/.test(String(v||""))?String(v):new Date().toISOString().slice(0,10)}
 function now(){return new Date().toISOString()}
 function plusDays(n){const d=new Date();d.setUTCDate(d.getUTCDate()+n);return d.toISOString()}
+const PLAN_DAYS={free:10,standard:30,business:365};
+function normalizePlan(v){const p=String(v||"").trim().toLowerCase();return Object.prototype.hasOwnProperty.call(PLAN_DAYS,p)?p:"free"}
+function planDays(v){return PLAN_DAYS[normalizePlan(v)]}
+function paymentUrls(env){return {standardPaymentUrl:env.STANDARD_PAYMENT_URL||"",businessPaymentUrl:env.BUSINESS_PAYMENT_URL||""}}
 function bytes(n){const a=new Uint8Array(n);crypto.getRandomValues(a);return a}
 function hex(a){return [...a].map(x=>x.toString(16).padStart(2,"0")).join("")}
 function b64(a){return btoa(String.fromCharCode(...a))}
@@ -205,6 +209,13 @@ async function ensureSchema(env){
   await ensureColumn(env,"audit_logs","metadata_json","TEXT");
   await ensureColumn(env,"audit_logs","created_at","TEXT");
 
+  // V39 : applique une seule fois la nouvelle durée du plan Free aux entreprises existantes.
+  const v39PlanMigrated=await env.DB.prepare("SELECT value FROM app_meta WHERE key='migration_plans_v39'").first();
+  if(v39PlanMigrated?.value!=="1"){
+    await env.DB.prepare(`UPDATE companies SET plan_expires_at=strftime('%Y-%m-%dT%H:%M:%fZ',datetime(plan_started_at,'+10 days')),updated_at=CURRENT_TIMESTAMP WHERE lower(COALESCE(plan,'free'))='free' AND plan_started_at IS NOT NULL AND trim(plan_started_at)<>''`).run();
+    await env.DB.prepare("INSERT INTO app_meta(key,value,updated_at) VALUES('migration_plans_v39','1',CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value='1',updated_at=CURRENT_TIMESTAMP").run();
+  }
+
   // V38 : reprise unique des anciens métiers vers la liste générale.
   const v38Migrated=await env.DB.prepare("SELECT value FROM app_meta WHERE key='migration_trade_catalog_v38'").first();
   if(v38Migrated?.value!=="1"){
@@ -215,7 +226,7 @@ async function ensureSchema(env){
   }
 
 }
-const SCHEMA_READY_KEY="schema:global-bt:v38";
+const SCHEMA_READY_KEY="schema:global-bt:v39";
 async function markSchemaReady(env){await env.GLOBAL_BT_KV.put(SCHEMA_READY_KEY,"1")}
 async function requireSchemaReady(env){
   if((await env.GLOBAL_BT_KV.get(SCHEMA_READY_KEY))==="1")return true;
@@ -224,7 +235,7 @@ async function requireSchemaReady(env){
     await markSchemaReady(env);
     return true;
   }catch(e){
-    console.error(JSON.stringify({event:"schema_v38_prepare_error",message:e?.message||String(e)}));
+    console.error(JSON.stringify({event:"schema_v39_prepare_error",message:e?.message||String(e)}));
     return false;
   }
 }
@@ -476,11 +487,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"38.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"39.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"38.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"39.0.0"},500);
   }
 }
 async function login(req,env){
@@ -517,7 +528,7 @@ async function login(req,env){
       csrf:s.csrf,
       user:{id:u.id,email:u.email,full_name:u.full_name,phone:u.phone,role:u.role,must_change_password:0},
       company:null,
-      businessPaymentUrl:env.BUSINESS_PAYMENT_URL
+      ...paymentUrls(env)
     },200,{"set-cookie":setCookie(s.t)});
   }
 
@@ -549,7 +560,7 @@ async function login(req,env){
     csrf:s.csrf,
     user:{id:u.id,email:u.email,full_name:u.full_name,phone:u.phone,role:u.role,must_change_password:u.must_change_password},
     company:c,
-    businessPaymentUrl:env.BUSINESS_PAYMENT_URL
+    ...paymentUrls(env)
   },200,{"set-cookie":setCookie(s.t)});
 }
 
@@ -584,7 +595,7 @@ async function register(req,env){
     cid=crypto.randomUUID();
     uid=crypto.randomUUID();
     const startDate=now();
-    const endDate=plusDays(21);
+    const endDate=plusDays(planDays("free"));
 
     stage="credential_prepare";
     const preparedCredential=await makeMemberCredential(pw);
@@ -636,7 +647,7 @@ async function register(req,env){
         plan_expires_at:endDate,
         status:"active"
       },
-      businessPaymentUrl:env.BUSINESS_PAYMENT_URL
+      ...paymentUrls(env)
     },201,{"set-cookie":setCookie(s.t)});
   }catch(e){
     const msg=String(e?.message||"");
@@ -674,7 +685,7 @@ async function register(req,env){
   }
 }
 
-async function session(req,env){const a=await auth(req,env);if(a.error)return a.error;return json({authenticated:true,csrf:a.s.s.csrf,user:a.s.u,company:a.s.c,businessPaymentUrl:env.BUSINESS_PAYMENT_URL})}
+async function session(req,env){const a=await auth(req,env);if(a.error)return a.error;return json({authenticated:true,csrf:a.s.s.csrf,user:a.s.u,company:a.s.c,...paymentUrls(env)})}
 async function logout(req,env){const a=await auth(req,env,null,true);if(!a.error){await env.GLOBAL_BT_KV.delete(a.s.key);await audit(env,a.s.u,"LOGOUT","user",a.s.u.id,ip(req))}return json({ok:true},200,{"set-cookie":clearCookie()})}
 
 async function load(req,env){
@@ -896,9 +907,9 @@ async function saveCompany(req,env,s,entity,action,r){
 async function saveSuper(req,env,s,entity,action,r){
   const actor=s.u;
   if(entity==="company"){
-    if(action==="create"){const plan=r.plan==="business"?"business":"free",start=now(),end=plusDays(plan==="business"?365:21),cid=crypto.randomUUID(),uid=crypto.randomUUID(),em=email(r.admin_email);if(!text(r.name,180)||!em||String(r.admin_password||"").length<12)return json({error:"Entreprise, administrateur et mot de passe requis"},400);if(await env.DB.prepare("SELECT id FROM users WHERE lower(email)=lower(?)").bind(em).first())return json({error:"E-mail déjà utilisé"},409);await insertCompanyProfile(env,{id:cid,name:text(r.name,180),city:text(r.city,120),plan,plan_started_at:start,plan_expires_at:end,status:"active"});await insertUserProfile(env,{id:uid,company_id:cid,email:em,full_name:text(r.admin_name,160),phone:text(r.admin_phone,50),role:"admin",created_by:actor.id,must_change_password:true});await setMemberCredentialKV(env,uid,r.admin_password);await audit(env,actor,"CREATE_COMPANY","company",cid,ip(req),{plan});return json({ok:true,id:cid})}
+    if(action==="create"){const plan=normalizePlan(r.plan),start=now(),end=plusDays(planDays(plan)),cid=crypto.randomUUID(),uid=crypto.randomUUID(),em=email(r.admin_email);if(!text(r.name,180)||!em||String(r.admin_password||"").length<12)return json({error:"Entreprise, administrateur et mot de passe requis"},400);if(await env.DB.prepare("SELECT id FROM users WHERE lower(email)=lower(?)").bind(em).first())return json({error:"E-mail déjà utilisé"},409);await insertCompanyProfile(env,{id:cid,name:text(r.name,180),city:text(r.city,120),plan,plan_started_at:start,plan_expires_at:end,status:"active"});await insertUserProfile(env,{id:uid,company_id:cid,email:em,full_name:text(r.admin_name,160),phone:text(r.admin_phone,50),role:"admin",created_by:actor.id,must_change_password:true});await setMemberCredentialKV(env,uid,r.admin_password);await audit(env,actor,"CREATE_COMPANY","company",cid,ip(req),{plan});return json({ok:true,id:cid})}
     const c=await env.DB.prepare("SELECT * FROM companies WHERE id=?").bind(r.id).first();if(!c)return json({error:"Entreprise introuvable"},404);
-    if(action==="set_plan"){const plan=r.plan==="business"?"business":"free",start=now(),end=plusDays(plan==="business"?365:21);await env.DB.prepare("UPDATE companies SET plan=?,plan_started_at=?,plan_expires_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(plan,start,end,c.id).run();await audit(env,actor,"SET_PLAN","company",c.id,ip(req),{plan});return json({ok:true})}
+    if(action==="set_plan"){const plan=normalizePlan(r.plan),start=now(),end=plusDays(planDays(plan));await env.DB.prepare("UPDATE companies SET plan=?,plan_started_at=?,plan_expires_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(plan,start,end,c.id).run();await audit(env,actor,"SET_PLAN","company",c.id,ip(req),{plan});return json({ok:true})}
     if(["activate","disable","delete"].includes(action)){const st={activate:"active",disable:"disabled",delete:"deleted"}[action];await env.DB.prepare("UPDATE companies SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(st,c.id).run();if(st!=="active")await env.DB.prepare("UPDATE users SET status='disabled',password_version=password_version+1 WHERE company_id=? AND status='active'").bind(c.id).run();await audit(env,actor,"COMPANY_"+action.toUpperCase(),"company",c.id,ip(req));return json({ok:true})}
   }
   if(entity==="user"){
@@ -935,7 +946,7 @@ async function cryptoHealth(req,env){
     const test=await makeMemberCredential("GlobalBT-Test-2026!");
     return json({
       ok:true,
-      app_version:"38.0.0",
+      app_version:"39.0.0",
       algorithm:"PBKDF2-SHA-256",
       iterations:test.password_iterations,
       elapsed_ms:Date.now()-started
@@ -943,7 +954,7 @@ async function cryptoHealth(req,env){
   }catch(e){
     return json({
       ok:false,
-      app_version:"38.0.0",
+      app_version:"39.0.0",
       code:e?.message||"PASSWORD_HASH_FAILED",
       elapsed_ms:Date.now()-started
     },500);
@@ -977,7 +988,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"38.0.0",
+    app_version:"39.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,
@@ -987,7 +998,7 @@ async function health(req,env){
     superadmin_ready:superadmin,
     superadmin_credential_ready:superadmin&&secretReady,
     superadmin_auth:"cloudflare_secret",
-    member_auth_store:"GLOBAL_BT_KV / cred:v1:<user_id>",schema_repair_version:"21"
+    member_auth_store:"GLOBAL_BT_KV / cred:v1:<user_id>",schema_repair_version:"39"
   });
 }
 

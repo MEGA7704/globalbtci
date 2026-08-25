@@ -1,0 +1,10 @@
+GLOBAL BT V39.0.0 — Correction ciblée des plans
+
+- Free : accès complet 10 jours, 0 FCFA.
+- Standard : accès complet 30 jours, 2 100 FCFA.
+- Paiement Standard : https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=2100
+- Business : accès complet 365 jours, 20 600 FCFA.
+- Paiement Business : https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=20600
+- Popup du plan Free : affiché à l'ouverture de chaque section et toutes les 15 minutes.
+- Super Admin : prise en charge réelle des trois plans Free, Standard et Business avec recalcul de l'expiration.
+- Aucun changement apporté aux fonctions Métiers, Matériaux et Fournisseurs de la V38.

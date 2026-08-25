@@ -32,12 +32,15 @@ Version consolidée, conçue pour éviter de publier les secrets dans GitHub.
 
 ## Plans
 
-- Free : accès complet 21 jours.
-- Business : accès complet 365 jours.
-- Le popup Free s'affiche à l'ouverture de chaque section et au moins toutes les 15 minutes.
+- Free : accès complet 10 jours (0 FCFA).
+- Standard : accès complet 30 jours (2 100 FCFA).
+- Business : accès complet 365 jours (20 600 FCFA).
+- Le popup Free s'affiche à l'ouverture de chaque section et toutes les 15 minutes.
+- Paiement Standard :
+  `https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=2100`
 - Paiement Business :
   `https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=20600`
-- Ouvrir le lien ne change pas automatiquement le plan. Le Super Admin active Business.
+- Ouvrir un lien de paiement ne change pas automatiquement le plan. Le Super Admin active Standard ou Business après validation du paiement.
 
 ## Super Admin — secret hors GitHub
 
