@@ -166,3 +166,13 @@ La V6 :
 - restaure automatiquement le padding `=`;
 - permet à PBKDF2 de décoder correctement le sel;
 - ajoute les diagnostics `BASE64_DECODE_ERROR` et `PASSWORD_HASH_ERROR`.
+
+
+## V7 — Bootstrap compatible avec les anciens schémas D1
+
+- lecture de `PRAGMA table_info(users)`;
+- remplissage explicite de `created_at`, `updated_at`, `phone`, `created_by` et autres colonnes connues;
+- détection des colonnes historiques `NOT NULL` sans valeur par défaut;
+- création d'une entreprise système uniquement si l'ancien schéma impose `users.company_id NOT NULL`;
+- diagnostic `/api/bootstrap-status` enrichi avec type, NOT NULL, défaut et clé primaire de chaque colonne;
+- aucune valeur de mot de passe/hash/secret n'est exposée.

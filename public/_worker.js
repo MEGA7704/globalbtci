@@ -116,6 +116,101 @@ async function tableColumns(env,table){
   const r=await env.DB.prepare(`PRAGMA table_info(${table})`).all();
   return new Set((r.results||[]).map(x=>x.name));
 }
+
+async function tableInfo(env,table){
+  const r=await env.DB.prepare(`PRAGMA table_info(${table})`).all();
+  return r.results||[];
+}
+async function columnRequiresValue(env,table,column){
+  const info=await tableInfo(env,table);
+  const col=info.find(x=>x.name===column);
+  return !!(col && Number(col.notnull)===1 && col.dflt_value==null);
+}
+async function ensureSystemCompany(env){
+  const id="__GLOBAL_BT_SYSTEM__";
+  const existing=await env.DB.prepare("SELECT id FROM companies WHERE id=?").bind(id).first();
+  if(existing)return id;
+  const start="2000-01-01T00:00:00.000Z";
+  const end="2099-12-31T23:59:59.999Z";
+  const cols=await tableColumns(env,"companies");
+  const names=[],vals=[],qs=[];
+  const add=(n,v)=>{if(cols.has(n)){names.push(n);vals.push(v);qs.push("?")}};
+  add("id",id);
+  add("name","GLOBAL BT - Système");
+  add("code","SYSTEM");
+  add("phone","");
+  add("email","");
+  add("address","");
+  add("city","");
+  add("status","active");
+  add("plan","business");
+  add("plan_started_at",start);
+  add("plan_expires_at",end);
+  add("created_at",nowIso());
+  add("updated_at",nowIso());
+  await env.DB.prepare(`INSERT INTO companies(${names.join(",")}) VALUES(${qs.join(",")})`).bind(...vals).run();
+  return id;
+}
+async function insertSuperAdminCompatible(env,id,email,hash,salt){
+  const info=await tableInfo(env,"users");
+  const cols=new Set(info.map(x=>x.name));
+  const companyRequired=await columnRequiresValue(env,"users","company_id");
+  const companyId=companyRequired?await ensureSystemCompany(env):null;
+  const now=nowIso();
+  const names=[],vals=[],qs=[];
+  const add=(n,v)=>{if(cols.has(n)){names.push(n);vals.push(v);qs.push("?")}};
+
+  add("id",id);
+  add("company_id",companyId);
+  add("email",email);
+  add("full_name","Super Administrateur");
+  add("phone","");
+  add("role","superadmin");
+  add("password_hash",hash);
+  add("password_salt",salt);
+  add("password_iterations",ITERATIONS);
+  add("password_version",1);
+  add("must_change_password",0);
+  add("status","active");
+  add("created_by",null);
+  add("created_at",now);
+  add("updated_at",now);
+
+  // Fail early with a clear diagnostic if an unknown legacy NOT NULL column has no default.
+  const supplied=new Set(names);
+  const unsupported=info.filter(c =>
+    Number(c.notnull)===1 &&
+    c.dflt_value==null &&
+    Number(c.pk)!==1 &&
+    !supplied.has(c.name)
+  );
+  if(unsupported.length){
+    throw new Error("LEGACY_REQUIRED_COLUMNS:"+unsupported.map(c=>c.name).join(","));
+  }
+
+  await env.DB.prepare(`INSERT INTO users(${names.join(",")}) VALUES(${qs.join(",")})`).bind(...vals).run();
+}
+async function updateSuperAdminCompatible(env,row,email,hash,salt){
+  const cols=await tableColumns(env,"users");
+  const companyRequired=await columnRequiresValue(env,"users","company_id");
+  const companyId=companyRequired?await ensureSystemCompany(env):null;
+  const sets=[],vals=[];
+  const set=(n,v)=>{if(cols.has(n)){sets.push(`${n}=?`);vals.push(v)}};
+  set("company_id",companyId);
+  set("email",email);
+  set("full_name","Super Administrateur");
+  set("phone",row.phone||"");
+  set("role","superadmin");
+  set("password_hash",hash);
+  set("password_salt",salt);
+  set("password_iterations",ITERATIONS);
+  set("password_version",Number(row.password_version||1)+1);
+  set("must_change_password",0);
+  set("status","active");
+  set("updated_at",nowIso());
+  vals.push(row.id);
+  await env.DB.prepare(`UPDATE users SET ${sets.join(",")} WHERE id=?`).bind(...vals).run();
+}
 async function ensureColumn(env,table,name,definition){
   const cols=await tableColumns(env,table);
   if(!cols.has(name)){
@@ -303,13 +398,19 @@ async function bootstrapStatus(req,env){
   if(!env.DB)return response({ok:false,code:"DB_BINDING_MISSING"},503);
   try{
     await ensureSchema(env);
-    const cols=[...(await tableColumns(env,"users"))].sort();
+    const info=await tableInfo(env,"users");
     const superRow=await env.DB.prepare("SELECT id,email,role,status,password_version FROM users WHERE role='superadmin' LIMIT 1").first();
     const configuredEmail=normEmail(env.SUPERADMIN_EMAIL||"");
     const emailRow=configuredEmail?await env.DB.prepare("SELECT id,email,role,status,password_version FROM users WHERE lower(email)=lower(?) LIMIT 1").bind(configuredEmail).first():null;
     return response({
       ok:true,
-      users_columns:cols,
+      users_schema:info.map(x=>({
+        name:x.name,
+        type:x.type,
+        notnull:Number(x.notnull)===1,
+        has_default:x.dflt_value!=null,
+        primary_key:Number(x.pk)>0
+      })),
       superadmin_exists:!!superRow,
       configured_email_exists:!!emailRow,
       configured_email_role:emailRow?.role||null,
@@ -319,7 +420,6 @@ async function bootstrapStatus(req,env){
     return response({ok:false,error:"Diagnostic D1 impossible",code:"DIAGNOSTIC_D1_ERROR"},500);
   }
 }
-
 async function health(req,env){
   const result = {
     ok:true,
@@ -355,14 +455,11 @@ async function bootstrap(req,env){
   try{
     await ensureSchema(env);
 
-    // Chercher d'abord par rôle, ensuite par e-mail. Cela couvre toutes les anciennes versions.
     const current=await env.DB.prepare(
       "SELECT * FROM users WHERE role='superadmin' AND status!='deleted' LIMIT 1"
     ).first();
 
     if(current){
-      // Un Super Admin existe. Ne pas écraser automatiquement son mot de passe.
-      // En revanche, débloquer les limites de connexion de l'adresse configurée.
       await clearSuperadminRateLimit(env,req,current.email||configuredEmail);
       return response({ok:true,alreadyInitialized:true,superadmin_ready:true});
     }
@@ -375,51 +472,16 @@ async function bootstrap(req,env){
     const hash=await passwordHash(env.SUPERADMIN_INITIAL_PASSWORD,salt);
 
     if(sameEmail){
-      const nextVersion=Number(sameEmail.password_version||1)+1;
-
-      // Requête volontairement limitée aux colonnes garanties/réparées.
-      await env.DB.prepare(`UPDATE users SET
-          company_id=NULL,
-          email=?,
-          full_name='Super Administrateur',
-          role='superadmin',
-          password_hash=?,
-          password_salt=?,
-          password_iterations=?,
-          password_version=?,
-          must_change_password=0,
-          status='active',
-          updated_at=CURRENT_TIMESTAMP
-        WHERE id=?`)
-        .bind(configuredEmail,hash,salt,ITERATIONS,nextVersion,sameEmail.id).run();
-
+      await updateSuperAdminCompatible(env,sameEmail,configuredEmail,hash,salt);
       await clearSuperadminRateLimit(env,req,configuredEmail);
-
-      // L'audit ne doit jamais faire échouer la réparation d'authentification.
-      try{
-        await audit(env,{id:sameEmail.id,company_id:null},"SUPERADMIN_REPAIRED","user",sameEmail.id,clientIp(req),{email:configuredEmail});
-      }catch(e){
-        console.error(JSON.stringify({event:"bootstrap_audit_warning",message:e?.message||String(e)}));
-      }
-
+      try{await audit(env,{id:sameEmail.id,company_id:null},"SUPERADMIN_REPAIRED","user",sameEmail.id,clientIp(req),{email:configuredEmail})}catch(e){console.error(JSON.stringify({event:"bootstrap_audit_warning",message:e?.message||String(e)}))}
       return response({ok:true,repaired:true,superadmin_ready:true});
     }
 
     const id=crypto.randomUUID();
-    await env.DB.prepare(`INSERT INTO users(
-        id,company_id,email,full_name,role,password_hash,password_salt,
-        password_iterations,password_version,must_change_password,status,created_by
-      ) VALUES(?,NULL,?,'Super Administrateur','superadmin',?,?,?,1,0,'active',NULL)`)
-      .bind(id,configuredEmail,hash,salt,ITERATIONS).run();
-
+    await insertSuperAdminCompatible(env,id,configuredEmail,hash,salt);
     await clearSuperadminRateLimit(env,req,configuredEmail);
-
-    try{
-      await audit(env,{id,company_id:null},"SUPERADMIN_BOOTSTRAP","user",id,clientIp(req),{email:configuredEmail});
-    }catch(e){
-      console.error(JSON.stringify({event:"bootstrap_audit_warning",message:e?.message||String(e)}));
-    }
-
+    try{await audit(env,{id,company_id:null},"SUPERADMIN_BOOTSTRAP","user",id,clientIp(req),{email:configuredEmail})}catch(e){console.error(JSON.stringify({event:"bootstrap_audit_warning",message:e?.message||String(e)}))}
     return response({ok:true,created:true,superadmin_ready:true});
   }catch(e){
     console.error(JSON.stringify({
@@ -427,21 +489,17 @@ async function bootstrap(req,env){
       message:e?.message||String(e),
       stack:e?.stack||""
     }));
-
-    // Code de diagnostic non sensible pour identifier la famille d'erreur sans exposer SQL/secrets.
     const msg=String(e?.message||"");
     let code="BOOTSTRAP_D1_ERROR";
-    if(msg.includes("no such column"))code="LEGACY_SCHEMA_COLUMN";
+    if(msg.includes("LEGACY_REQUIRED_COLUMNS:"))code=msg;
+    else if(msg.includes("no such column"))code="LEGACY_SCHEMA_COLUMN";
     else if(msg.includes("UNIQUE constraint"))code="EMAIL_CONFLICT";
     else if(msg.includes("NOT NULL constraint"))code="LEGACY_SCHEMA_REQUIRED";
+    else if(msg.includes("FOREIGN KEY constraint"))code="LEGACY_FOREIGN_KEY";
     else if(msg.includes("no such table"))code="SCHEMA_MISSING";
     else if(msg.includes("InvalidCharacterError")||msg.includes("atob")||msg.includes("base64"))code="BASE64_DECODE_ERROR";
     else if(msg.includes("PBKDF2")||msg.includes("deriveBits"))code="PASSWORD_HASH_ERROR";
-
-    return response({
-      error:"Initialisation Super Admin impossible",
-      code
-    },500);
+    return response({error:"Initialisation Super Admin impossible",code},500);
   }
 }
 async function register(req,env){
