@@ -460,11 +460,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"30.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"32.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"30.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"32.0.0"},500);
   }
 }
 async function login(req,env){
@@ -830,7 +830,7 @@ async function saveCompany(req,env,s,entity,action,r){
   }
   if(entity==="expense"){
     if(action==="create"){const wp=await writableProject(env,c,r.project_id);if(wp.error)return wp.error;const total=Math.round(qty(r.quantity)*money(r.unit_price)),id=crypto.randomUUID();await env.DB.prepare("INSERT INTO expenses(id,company_id,project_id,trade_id,supplier_id,expense_date,description,quantity,unit,unit_price,total_price,reference,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,c,r.project_id,r.trade_id||null,r.supplier_id||null,today(r.expense_date),text(r.description,500),qty(r.quantity),text(r.unit,40),money(r.unit_price),total,text(r.reference,120),text(r.notes,800),actor.id).run();await audit(env,actor,"CREATE_EXPENSE","expense",id,ip(req),{total});return json({ok:true,id,total})}
-    if(action==="delete"&&actor.role==="admin"){await env.DB.prepare("DELETE FROM expenses WHERE id=? AND company_id=?").bind(r.id,c).run();await audit(env,actor,"DELETE_EXPENSE","expense",r.id,ip(req));return json({ok:true})}
+    if(action==="delete"&&actor.role==="admin"){const ex=await env.DB.prepare("SELECT id,project_id FROM expenses WHERE id=? AND company_id=?").bind(r.id,c).first();if(!ex)return json({error:"Dépense introuvable"},404);await env.DB.prepare("DELETE FROM expenses WHERE id=? AND company_id=?").bind(r.id,c).run();await audit(env,actor,"DELETE_EXPENSE","expense",r.id,ip(req),{project_id:ex.project_id});return json({ok:true})}
   }
   if(entity==="labor"){
     if(action==="create"){
@@ -857,8 +857,8 @@ async function saveCompany(req,env,s,entity,action,r){
   }
   if(entity==="project_supplier"){
     if(actor.role!=="admin")return json({error:"Action réservée à l'Administrateur"},403);
-    const wp=await writableProject(env,c,r.project_id);if(wp.error)return wp.error;
     if(action==="create"){
+      const wp=await writableProject(env,c,r.project_id);if(wp.error)return wp.error;
       const sp=await env.DB.prepare("SELECT id FROM suppliers WHERE id=? AND company_id=?").bind(r.supplier_id,c).first();if(!sp)return json({error:"Fournisseur invalide"},400);
       const ex=await env.DB.prepare("SELECT id FROM project_suppliers WHERE company_id=? AND project_id=? AND supplier_id=?").bind(c,r.project_id,r.supplier_id).first();if(ex)return json({error:"Ce fournisseur est déjà affecté au projet"},409);
       const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO project_suppliers(id,company_id,project_id,supplier_id,notes) VALUES(?,?,?,?,?)").bind(id,c,r.project_id,r.supplier_id,text(r.notes,500)).run();return json({ok:true,id});
@@ -916,7 +916,7 @@ async function cryptoHealth(req,env){
     const test=await makeMemberCredential("GlobalBT-Test-2026!");
     return json({
       ok:true,
-      app_version:"30.0.0",
+      app_version:"32.0.0",
       algorithm:"PBKDF2-SHA-256",
       iterations:test.password_iterations,
       elapsed_ms:Date.now()-started
@@ -924,7 +924,7 @@ async function cryptoHealth(req,env){
   }catch(e){
     return json({
       ok:false,
-      app_version:"30.0.0",
+      app_version:"32.0.0",
       code:e?.message||"PASSWORD_HASH_FAILED",
       elapsed_ms:Date.now()-started
     },500);
@@ -958,7 +958,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"30.0.0",
+    app_version:"32.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,

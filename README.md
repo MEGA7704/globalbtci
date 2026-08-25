@@ -326,3 +326,25 @@ Refonte visuelle du popup projet :
 - en-tête, bannière KPI, onglets et pied restent visibles ;
 - affichage encore plus compact sur écrans larges mais peu hauts ;
 - tablette et mobile conservent un comportement responsive avec défilement adapté.
+
+
+## V31 — Popup sans défilement vertical ni horizontal
+
+Sur grand écran :
+- aucun défilement vertical du popup ;
+- aucun défilement horizontal ;
+- tableau compacté automatiquement ;
+- colonnes à largeur fixe ;
+- textes longs tronqués avec points de suspension ;
+- en-tête, KPI, onglets, tableau et pied restent visibles simultanément ;
+- actions conservées sans débordement.
+
+Sur petits écrans, le scroll horizontal reste supprimé.
+
+
+## V32 — Suppression et sections complètes
+- suppression d’une dépense depuis le popup projet ;
+- retrait d’un fournisseur affecté au projet ;
+- confirmation avant suppression ;
+- pagination automatique des listes pour conserver le popup sans défilement vertical/horizontal ;
+- chaque page de section est présentée entièrement à l’écran.
