@@ -2,11 +2,120 @@ const $=s=>document.querySelector(s);
 const S={session:null,data:null,view:null,promo:0};
 const names={dashboard:"Tableau de bord",projects:"Projets",expenses:"Dépenses",labor:"Main-d'œuvre",trades:"Corps de métier",suppliers:"Fournisseurs",users:"Utilisateurs",reports:"Rapports",settings:"Paramètres",super:"Tableau de bord",companies:"Entreprises",members:"Membres",subscriptions:"Abonnements",resets:"Mots de passe",audit:"Journal"};
 
+const actionLocks=new WeakMap();
+
+function setBusy(el,busy,label="Traitement..."){
+  if(!el)return;
+  if(busy){
+    if(actionLocks.get(el))return false;
+    actionLocks.set(el,true);
+    el.dataset.originalText=el.innerHTML;
+    el.disabled=true;
+    el.classList.add("is-busy");
+    if(el.tagName==="BUTTON" && label)el.innerHTML=`<span class="btn-spinner"></span>${esc(label)}`;
+    return true;
+  }
+  actionLocks.delete(el);
+  el.disabled=false;
+  el.classList.remove("is-busy");
+  if(el.dataset.originalText!==undefined){
+    el.innerHTML=el.dataset.originalText;
+    delete el.dataset.originalText;
+  }
+  return true;
+}
+
+async function guardAction(el,fn,label="Traitement..."){
+  if(el && actionLocks.get(el))return;
+  if(el && !setBusy(el,true,label))return;
+  try{return await fn()}
+  finally{if(el)setBusy(el,false)}
+}
+
+function enhancePasswordFields(root=document){
+  root.querySelectorAll('input[type="password"]:not([data-password-enhanced])').forEach(input=>{
+    input.dataset.passwordEnhanced="1";
+    const parent=input.parentElement;
+    if(parent?.classList.contains("pw") || parent?.classList.contains("password-field-wrap")){
+      if(!parent.querySelector(".password-toggle")){
+        const b=document.createElement("button");
+        b.type="button";
+        b.className="password-toggle";
+        b.textContent="Voir";
+        b.setAttribute("aria-label","Afficher le mot de passe");
+        b.onclick=()=>{
+          const show=input.type==="password";
+          input.type=show?"text":"password";
+          b.textContent=show?"Masquer":"Voir";
+          b.setAttribute("aria-label",show?"Masquer le mot de passe":"Afficher le mot de passe");
+        };
+        parent.appendChild(b);
+      }
+      return;
+    }
+    const wrap=document.createElement("div");
+    wrap.className="password-field-wrap";
+    input.parentNode.insertBefore(wrap,input);
+    wrap.appendChild(input);
+    const b=document.createElement("button");
+    b.type="button";
+    b.className="password-toggle";
+    b.textContent="Voir";
+    b.setAttribute("aria-label","Afficher le mot de passe");
+    b.onclick=()=>{
+      const show=input.type==="password";
+      input.type=show?"text":"password";
+      b.textContent=show?"Masquer":"Voir";
+      b.setAttribute("aria-label",show?"Masquer le mot de passe":"Afficher le mot de passe");
+    };
+    wrap.appendChild(b);
+  });
+}
+
+const uiObserver=new MutationObserver(()=>enhancePasswordFields(document));
+document.addEventListener("DOMContentLoaded",()=>enhancePasswordFields(document));
+uiObserver.observe(document.documentElement,{subtree:true,childList:true});
+
+document.addEventListener("click",e=>{
+  const btn=e.target.closest("button");
+  if(!btn)return;
+  if(btn.disabled || btn.classList.contains("is-busy")){
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+},true);
+
+document.addEventListener("submit",e=>{
+  const form=e.target;
+  if(!(form instanceof HTMLFormElement))return;
+  if(form.dataset.submitting==="1"){
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    return;
+  }
+  form.dataset.submitting="1";
+  const submit=form.querySelector('button[type="submit"],button:not([type])');
+  if(submit)setBusy(submit,true,"Enregistrement...");
+  setTimeout(()=>{
+    if(form.isConnected && form.dataset.submitting==="1"){
+      form.dataset.submitting="0";
+      if(submit)setBusy(submit,false);
+    }
+  },12000);
+},true);
+
+function releaseForm(form){
+  if(!form)return;
+  form.dataset.submitting="0";
+  const submit=form.querySelector('button[type="submit"],button:not([type])');
+  if(submit)setBusy(submit,false);
+}
+
 function esc(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]))}
 function cash(v){return new Intl.NumberFormat("fr-FR").format(Number(v||0))+" FCFA"}
 function df(v){if(!v)return"";const d=new Date(v.length===10?v+"T00:00:00":v);return Number.isNaN(+d)?v:d.toLocaleDateString("fr-FR")}
 function toast(m,bad=false){const t=$("#toast");t.textContent=m;t.style.background=bad?"#8d3037":"#16433e";t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),3000)}
-function modal(h){$("#modalBody").innerHTML=h;$("#modal").classList.remove("hidden")}function closeModal(){$("#modal").classList.add("hidden")}
+function modal(h){$("#modalBody").innerHTML=h;$("#modal").classList.remove("hidden");enhancePasswordFields($("#modalBody"))}function closeModal(){$("#modal").classList.add("hidden")}
 $("#modalClose").onclick=closeModal;$("#modal").onclick=e=>{if(e.target===$("#modal"))closeModal()};
 async function api(path,opt={},retry=true){
   const headers={...(opt.body?{"content-type":"application/json"}:{}),...(opt.headers||{})};
@@ -46,8 +155,7 @@ function confirmBox(txt,fn){modal(`<h2>Confirmation</h2><p>${esc(txt)}</p><div c
 
 $("#tabLogin").onclick=()=>authMode(true);$("#tabRegister").onclick=()=>authMode(false);
 function authMode(login){$("#loginForm").classList.toggle("hidden",!login);$("#registerForm").classList.toggle("hidden",login);$("#tabLogin").classList.toggle("active",login);$("#tabRegister").classList.toggle("active",!login);$("#authMessage").textContent=""}
-$("#showLoginPassword").onclick=()=>{const i=$("#loginPassword");i.type=i.type==="password"?"text":"password";$("#showLoginPassword").textContent=i.type==="password"?"Voir":"Masquer"};
-$("#loginForm").onsubmit=async e=>{e.preventDefault();try{S.session=await post("/api/login",{email:$("#loginEmail").value,password:$("#loginPassword").value});await enter()}catch(x){$("#authMessage").textContent=x.message}};
+$("#loginForm").onsubmit=async e=>{e.preventDefault();try{S.session=await post("/api/login",{email:$("#loginEmail").value,password:$("#loginPassword").value});await enter()}catch(x){$("#authMessage").textContent=x.message}finally{releaseForm(e.target)}};
 $("#registerForm").onsubmit=async e=>{e.preventDefault();if($("#regPassword").value!==$("#regPassword2").value)return $("#authMessage").textContent="Les mots de passe ne correspondent pas.";try{S.session=await post("/api/register",{company_name:$("#regCompany").value,city:$("#regCity").value,full_name:$("#regName").value,phone:$("#regPhone").value,email:$("#regEmail").value,password:$("#regPassword").value});await enter()}catch(x){$("#authMessage").textContent=x.message+(x.stage?` · étape ${x.stage}`:"")+(x.code?` · ${x.code}`:"")}};
 $("#forgotBtn").onclick=()=>modal(`<h2>Mot de passe oublié</h2><p>Administrateur : demande envoyée au Super Admin. Agent : demande envoyée à votre Administrateur.</p><form id="forgotForm"><label>E-mail<input name="email" type="email" required></label><button class="btn primary full">Envoyer</button></form><div id="forgotMsg" class="message"></div>`);
 document.addEventListener("submit",async e=>{if(e.target.id==="forgotForm"){e.preventDefault();try{const r=await post("/api/password-reset/request",fd(e.target));$("#forgotMsg").textContent=r.message}catch(x){$("#forgotMsg").textContent=x.message}}});
@@ -246,3 +354,9 @@ function superResets(){$("#content").innerHTML=`<div class="panel"><h2>Demandes 
 function superAudit(){$("#content").innerHTML=`<div class="panel"><div class="panelhead"><h2>Journal des actions sensibles</h2><button onclick="window.print()" class="btn secondary">Imprimer</button></div>${table(["Date","Acteur","Entreprise","Action","Cible","IP"],S.data.logs.map(x=>`<tr><td>${df(x.created_at)}</td><td>${esc(x.actor_name||"Système")}</td><td>${esc(x.company_name||"—")}</td><td><strong>${esc(x.action)}</strong></td><td>${esc(x.target_type||"")} ${esc(x.target_id||"")}</td><td>${esc(x.ip||"")}</td></tr>`))}</div>`}
 
 init();
+
+document.addEventListener("submit",e=>{
+  const form=e.target;
+  if(!(form instanceof HTMLFormElement))return;
+  setTimeout(()=>{if(form.isConnected)releaseForm(form)},2500);
+});

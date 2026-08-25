@@ -457,11 +457,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"21.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"24.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"21.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"24.0.0"},500);
   }
 }
 async function login(req,env){
@@ -710,6 +710,7 @@ async function save(req,env){
     if(msg.includes("LABOR_REQUIRED_COLUMNS:"))code=msg;
     else if(msg.includes("no such column"))code="MISSING_COLUMN";
     else if(msg.includes("NOT NULL constraint"))code="NOT_NULL_CONSTRAINT";
+    else if(msg.includes("UNIQUE constraint") && entity==="trade")code="TRADE_ALREADY_EXISTS";
     else if(msg.includes("UNIQUE constraint"))code="UNIQUE_CONSTRAINT";
     else if(msg.includes("CHECK constraint"))code="CHECK_CONSTRAINT";
     else if(msg.includes("FOREIGN KEY constraint"))code="FOREIGN_KEY_CONSTRAINT";
@@ -726,8 +727,39 @@ async function saveCompany(req,env,s,entity,action,r){
     if(action==="delete"&&actor.role==="admin"){const used=await env.DB.prepare("SELECT (SELECT COUNT(*) FROM expenses WHERE project_id=? AND company_id=?)+(SELECT COUNT(*) FROM labor_expenses WHERE project_id=? AND company_id=?) n").bind(r.id,c,r.id,c).first();if(used.n)return json({error:"Projet contenant des dépenses : suppression refusée"},409);await env.DB.prepare("DELETE FROM trades WHERE project_id=? AND company_id=?").bind(r.id,c).run();await env.DB.prepare("DELETE FROM projects WHERE id=? AND company_id=?").bind(r.id,c).run();await audit(env,actor,"DELETE_PROJECT","project",r.id,ip(req));return json({ok:true})}
   }
   if(entity==="trade"){
-    if(action==="create"){const p=await env.DB.prepare("SELECT id FROM projects WHERE id=? AND company_id=?").bind(r.project_id,c).first();if(!p)return json({error:"Projet invalide"},400);const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO trades(id,company_id,project_id,name,description) VALUES(?,?,?,?,?)").bind(id,c,r.project_id,text(r.name,120),text(r.description,500)).run();return json({ok:true,id})}
-    if(action==="delete"&&actor.role==="admin"){await env.DB.prepare("DELETE FROM trades WHERE id=? AND company_id=?").bind(r.id,c).run();return json({ok:true})}
+    if(action==="create"){
+      const projectId=text(r.project_id,100);
+      const tradeName=text(r.name,120);
+      if(!projectId||!tradeName)return json({error:"Projet et nom du métier obligatoires"},400);
+
+      const p=await env.DB.prepare("SELECT id FROM projects WHERE id=? AND company_id=?").bind(projectId,c).first();
+      if(!p)return json({error:"Projet invalide"},400);
+
+      const existing=await env.DB.prepare(
+        "SELECT id FROM trades WHERE company_id=? AND project_id=? AND lower(trim(name))=lower(trim(?)) LIMIT 1"
+      ).bind(c,projectId,tradeName).first();
+
+      if(existing){
+        return json({
+          error:"Ce métier existe déjà pour ce projet",
+          code:"TRADE_ALREADY_EXISTS",
+          existing_id:existing.id
+        },409);
+      }
+
+      const id=crypto.randomUUID();
+      await env.DB.prepare(
+        "INSERT INTO trades(id,company_id,project_id,name,description) VALUES(?,?,?,?,?)"
+      ).bind(id,c,projectId,tradeName,text(r.description,500)).run();
+
+      await audit(env,actor,"CREATE_TRADE","trade",id,ip(req),{project_id:projectId,name:tradeName});
+      return json({ok:true,id})
+    }
+    if(action==="delete"&&actor.role==="admin"){
+      await env.DB.prepare("DELETE FROM trades WHERE id=? AND company_id=?").bind(r.id,c).run();
+      await audit(env,actor,"DELETE_TRADE","trade",r.id,ip(req));
+      return json({ok:true})
+    }
   }
   if(entity==="supplier"){
     if(action==="create"){const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO suppliers(id,company_id,name,phone,email,city,address,specialty,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?,?)").bind(id,c,text(r.name,180),text(r.phone,50),email(r.email)||null,text(r.city,120),text(r.address,240),text(r.specialty,160),text(r.notes,800),actor.id).run();return json({ok:true,id})}
@@ -811,7 +843,7 @@ async function cryptoHealth(req,env){
     const test=await makeMemberCredential("GlobalBT-Test-2026!");
     return json({
       ok:true,
-      app_version:"21.0.0",
+      app_version:"24.0.0",
       algorithm:"PBKDF2-SHA-256",
       iterations:test.password_iterations,
       elapsed_ms:Date.now()-started
@@ -819,7 +851,7 @@ async function cryptoHealth(req,env){
   }catch(e){
     return json({
       ok:false,
-      app_version:"21.0.0",
+      app_version:"24.0.0",
       code:e?.message||"PASSWORD_HASH_FAILED",
       elapsed_ms:Date.now()-started
     },500);
@@ -853,7 +885,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"21.0.0",
+    app_version:"24.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,

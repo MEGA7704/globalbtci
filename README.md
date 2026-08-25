@@ -258,3 +258,29 @@ Nouveau tableau de bord :
 - tableau de performance budgétaire de chaque projet ;
 - alertes de dépassement et projets suspendus ;
 - impression / PDF.
+
+
+## V23 — Correction doublon Corps de métier
+
+La création d'un corps de métier vérifie maintenant l'existence du même nom
+dans le même projet avant l'insertion.
+
+En cas de doublon :
+- HTTP 409 ;
+- message : `Ce métier existe déjà pour ce projet` ;
+- code : `TRADE_ALREADY_EXISTS`.
+
+La comparaison ignore les différences de majuscules/minuscules et les espaces
+en début/fin de nom.
+
+
+## V24 — Anti double-clic + affichage des mots de passe
+
+- protection globale des boutons d'action contre les doubles clics ;
+- désactivation temporaire des boutons pendant une opération ;
+- indicateur de chargement sur les boutons de soumission ;
+- protection des formulaires contre les doubles soumissions ;
+- bouton Voir / Masquer ajouté automatiquement à tous les champs `type=password`,
+  y compris ceux créés dynamiquement dans les popups ;
+- connexion, inscription, création d'Agent, création d'entreprise,
+  réinitialisation et changement de mot de passe couverts.
