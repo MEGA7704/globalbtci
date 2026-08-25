@@ -239,3 +239,22 @@ Le résultat attendu est `ok: true`.
 - diagnostic explicite `LABOR_REQUIRED_COLUMNS:<colonne>` si une vieille colonne obligatoire subsiste ;
 - nouvelle route `/api/csrf` ;
 - renouvellement automatique du jeton CSRF puis nouvelle tentative unique de l'écriture.
+
+
+## V22 — Tableau de bord professionnel dynamique
+
+Nouveau tableau de bord :
+- cartes de performance dynamiques ;
+- projets totaux / en cours / terminés ;
+- budget global ;
+- dépenses totales ;
+- budget restant ;
+- dépenses du mois ;
+- poids de la main-d'œuvre ;
+- jauge de consommation budgétaire ;
+- comparaison matériaux / main-d'œuvre ;
+- évolution des dépenses sur les 6 derniers mois ;
+- classement des dépenses par métier ;
+- tableau de performance budgétaire de chaque projet ;
+- alertes de dépassement et projets suspendus ;
+- impression / PDF.

@@ -67,7 +67,154 @@ async function reload(){S.data=await api("/api/load")}
 function nav(){const superA=S.session.user.role==="superadmin",admin=S.session.user.role==="admin";const n=superA?[["super","Tableau de bord"],["companies","Entreprises"],["members","Membres"],["subscriptions","Abonnements"],["resets","Mots de passe"],["audit","Journal"]]:[["dashboard","Tableau de bord"],["projects","Projets"],["expenses","Dépenses"],["labor","Main-d'œuvre"],["trades","Métiers"],["suppliers","Fournisseurs"],["reports","Rapports"],...(admin?[["users","Utilisateurs"]]:[]),["settings","Paramètres"]];$("#mainNav").innerHTML=n.map(([i,l])=>`<button data-nav="${i}">${l}</button>`).join("")+`<button id="logout" class="logout">Déconnexion</button>`;$("#mainNav").classList.remove("hidden");document.querySelectorAll("[data-nav]").forEach(b=>b.onclick=()=>go(b.dataset.nav));$("#logout").onclick=async()=>{try{await post("/api/logout",{})}catch{}location.reload()}}
 function go(v){S.view=v;document.querySelectorAll("[data-nav]").forEach(b=>b.classList.toggle("active",b.dataset.nav===v));$("#pageTitle").textContent=names[v]||"GLOBAL BT";$("#pageSub").textContent=S.session.company?.name||"Administration générale";render();if(S.session.company?.plan==="free")promo()}
 function render(){if(S.session.user.role==="superadmin")return renderSuper();({dashboard,projects,expenses,labor,trades,suppliers,users,reports,settings}[S.view]||dashboard)()}
-function dashboard(){const p=S.data.projects||[],e=S.data.expenses||[],l=S.data.labor||[],mat=e.reduce((a,x)=>a+Number(x.total_price),0),lab=l.reduce((a,x)=>a+Number(x.amount),0),budget=p.reduce((a,x)=>a+Number(x.budget),0);$("#content").innerHTML=`<div class="kpis">${kpi("Projets",p.length)}${kpi("Matériaux",cash(mat))}${kpi("Main-d'œuvre",cash(lab))}${kpi("Dépenses totales",cash(mat+lab))}${kpi("Budget global",cash(budget))}${kpi("Budget restant",cash(budget-mat-lab))}</div><div class="panel"><h2>Vue générale</h2><p>Les données sont limitées côté serveur à votre entreprise.</p></div>`}
+function dashboard(){
+  const p=S.data.projects||[],e=S.data.expenses||[],l=S.data.labor||[],tr=S.data.trades||[];
+  const mat=e.reduce((a,x)=>a+Number(x.total_price||0),0);
+  const lab=l.reduce((a,x)=>a+Number(x.amount||0),0);
+  const total=mat+lab;
+  const budget=p.reduce((a,x)=>a+Number(x.budget||0),0);
+  const remain=budget-total;
+  const rate=budget>0?Math.round((total/budget)*100):0;
+  const active=p.filter(x=>x.status==="in_progress").length;
+  const done=p.filter(x=>x.status==="completed").length;
+  const suspended=p.filter(x=>x.status==="suspended").length;
+
+  const nowDate=new Date();
+  const ym=nowDate.toISOString().slice(0,7);
+  const monthMat=e.filter(x=>String(x.expense_date||"").slice(0,7)===ym).reduce((a,x)=>a+Number(x.total_price||0),0);
+  const monthLab=l.filter(x=>String(x.expense_date||"").slice(0,7)===ym).reduce((a,x)=>a+Number(x.amount||0),0);
+  const monthSpend=monthMat+monthLab;
+
+  const projectRows=p.map(pr=>{
+    const pm=e.filter(x=>x.project_id===pr.id).reduce((a,x)=>a+Number(x.total_price||0),0);
+    const pl=l.filter(x=>x.project_id===pr.id).reduce((a,x)=>a+Number(x.amount||0),0);
+    const spent=pm+pl;
+    const b=Number(pr.budget||0);
+    const pct=b>0?Math.round(spent*100/b):0;
+    return {...pr,spent,pct,remaining:b-spent};
+  }).sort((a,b)=>b.spent-a.spent);
+
+  const byTrade=tr.map(t=>{
+    const m=e.filter(x=>x.trade_id===t.id).reduce((a,x)=>a+Number(x.total_price||0),0);
+    const w=l.filter(x=>x.trade_id===t.id).reduce((a,x)=>a+Number(x.amount||0),0);
+    return {name:t.name,total:m+w,materials:m,labor:w};
+  }).filter(x=>x.total>0).sort((a,b)=>b.total-a.total);
+
+  const months={};
+  for(const x of e){
+    const k=String(x.expense_date||"").slice(0,7);
+    if(k)months[k]=(months[k]||0)+Number(x.total_price||0);
+  }
+  for(const x of l){
+    const k=String(x.expense_date||"").slice(0,7);
+    if(k)months[k]=(months[k]||0)+Number(x.amount||0);
+  }
+  const monthSeries=Object.entries(months).sort((a,b)=>a[0].localeCompare(b[0])).slice(-6).map(([month,total])=>({month,total}));
+  const maxMonth=Math.max(1,...monthSeries.map(x=>x.total));
+  const maxTrade=Math.max(1,...byTrade.map(x=>x.total));
+
+  const alertClass=remain<0?"danger-card":rate>=85?"warn-card":"";
+  const budgetState=remain<0?"Budget dépassé":rate>=85?"Budget sous surveillance":"Budget maîtrisé";
+
+  $("#content").innerHTML=`
+    <section class="dash-hero">
+      <div>
+        <span class="eyebrow">PILOTAGE GLOBAL</span>
+        <h2>Vue de performance de vos chantiers</h2>
+        <p>Suivez en temps réel la consommation budgétaire, les dépenses, l'avancement des projets et les postes les plus coûteux.</p>
+      </div>
+      <div class="dash-hero-badge">
+        <span>${new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"2-digit",month:"long",year:"numeric"})}</span>
+      </div>
+    </section>
+
+    <div class="kpis performance-grid">
+      <div class="kpi performance-card">
+        <div class="kpi-icon">◫</div>
+        <div><small>Projets totaux</small><strong>${p.length}</strong><em>${active} en cours · ${done} terminés</em></div>
+      </div>
+      <div class="kpi performance-card">
+        <div class="kpi-icon">₣</div>
+        <div><small>Budget global</small><strong>${cash(budget)}</strong><em>Prévision totale</em></div>
+      </div>
+      <div class="kpi performance-card">
+        <div class="kpi-icon">↘</div>
+        <div><small>Dépenses totales</small><strong>${cash(total)}</strong><em>${rate}% du budget consommé</em></div>
+      </div>
+      <div class="kpi performance-card ${alertClass}">
+        <div class="kpi-icon">◎</div>
+        <div><small>Budget restant</small><strong>${cash(remain)}</strong><em>${budgetState}</em></div>
+      </div>
+      <div class="kpi performance-card">
+        <div class="kpi-icon">▤</div>
+        <div><small>Dépenses du mois</small><strong>${cash(monthSpend)}</strong><em>Matériaux + main-d'œuvre</em></div>
+      </div>
+      <div class="kpi performance-card">
+        <div class="kpi-icon">⚒</div>
+        <div><small>Main-d'œuvre</small><strong>${cash(lab)}</strong><em>${total?Math.round(lab*100/total):0}% des dépenses</em></div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <div class="panel dashboard-panel">
+        <div class="panelhead">
+          <div><h2>Consommation budgétaire</h2><p class="muted">Budget utilisé sur l'ensemble des projets</p></div>
+          <strong class="metric-big">${rate}%</strong>
+        </div>
+        <div class="budget-meter"><span style="width:${Math.min(100,Math.max(0,rate))}%"></span></div>
+        <div class="budget-summary">
+          <span><b>${cash(total)}</b><small>Consommé</small></span>
+          <span><b>${cash(remain)}</b><small>Disponible</small></span>
+        </div>
+      </div>
+
+      <div class="panel dashboard-panel">
+        <div class="panelhead"><div><h2>Répartition des dépenses</h2><p class="muted">Matériaux vs main-d'œuvre</p></div></div>
+        <div class="split-metrics">
+          <div class="split-box"><strong>${cash(mat)}</strong><span>Matériaux</span><div class="mini-meter"><i style="width:${total?Math.round(mat*100/total):0}%"></i></div></div>
+          <div class="split-box"><strong>${cash(lab)}</strong><span>Main-d'œuvre</span><div class="mini-meter"><i style="width:${total?Math.round(lab*100/total):0}%"></i></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <div class="panel dashboard-panel">
+        <div class="panelhead"><div><h2>Évolution des dépenses</h2><p class="muted">6 derniers mois enregistrés</p></div></div>
+        <div class="bar-chart-pro">
+          ${monthSeries.length?monthSeries.map(x=>`<div class="bar-item"><div class="bar-value">${cash(x.total)}</div><div class="bar-track"><span style="height:${Math.max(8,Math.round(x.total*150/maxMonth))}px"></span></div><small>${esc(x.month)}</small></div>`).join(""):`<div class="empty">Pas encore assez de données</div>`}
+        </div>
+      </div>
+
+      <div class="panel dashboard-panel">
+        <div class="panelhead"><div><h2>Dépenses par métier</h2><p class="muted">Top postes de coût</p></div></div>
+        <div class="trade-ranking">
+          ${byTrade.length?byTrade.slice(0,6).map((x,i)=>`<div class="trade-row"><div class="trade-name"><b>${i+1}. ${esc(x.name)}</b><span>${cash(x.total)}</span></div><div class="rank-meter"><i style="width:${Math.max(4,Math.round(x.total*100/maxTrade))}%"></i></div></div>`).join(""):`<div class="empty">Aucune dépense par métier</div>`}
+        </div>
+      </div>
+    </div>
+
+    <div class="panel dashboard-panel">
+      <div class="panelhead">
+        <div><h2>Performance des projets</h2><p class="muted">Budget, dépenses et taux de consommation par chantier</p></div>
+        <button class="btn secondary" onclick="window.print()">Imprimer / PDF</button>
+      </div>
+      ${table(["Projet","Statut","Budget","Dépenses","Reste","Consommation"],projectRows.map(x=>`
+        <tr>
+          <td><strong>${esc(x.name)}</strong><br><small>${esc(x.location||"")}</small></td>
+          <td><span class="status">${esc(x.status)}</span></td>
+          <td class="money">${cash(x.budget)}</td>
+          <td class="money">${cash(x.spent)}</td>
+          <td class="money ${x.remaining<0?"negative":""}">${cash(x.remaining)}</td>
+          <td>
+            <div class="table-progress"><span style="width:${Math.min(100,Math.max(0,x.pct))}%"></span></div>
+            <small>${x.pct}%</small>
+          </td>
+        </tr>`))}
+    </div>
+
+    ${suspended?`<div class="panel alert-panel"><strong>Attention :</strong> ${suspended} projet(s) suspendu(s) nécessitent un suivi.</div>`:""}
+  `;
+}
 function projects(){$("#content").innerHTML=`<div class="panel"><div class="panelhead"><h2>Projets</h2><button id="addProject" class="btn primary">+ Nouveau projet</button></div>${table(["Projet","Localité","Budget","Statut","Actions"],S.data.projects.map(x=>`<tr><td><strong>${esc(x.name)}</strong></td><td>${esc(x.location||"")}</td><td class="money">${cash(x.budget)}</td><td><span class="status">${esc(x.status)}</span></td><td>${S.session.user.role==="admin"?`<button class="btn small danger del-project" data-id="${x.id}">Supprimer</button>`:""}</td></tr>`))}</div>`;$("#addProject").onclick=()=>modal(`<h2>Nouveau projet</h2><form id="projectForm" class="formgrid"><label>Nom<input name="name" required></label><label>Type<input name="project_type" value="Bâtiment"></label><label>Localité<input name="location"></label><label>Budget<input name="budget" type="number" min="0"></label><label>Maître d'ouvrage<input name="owner_name"></label><label>Responsable<input name="manager_name"></label><label>Date début<input name="start_date" type="date"></label><label>Date fin<input name="end_date" type="date"></label><label>Statut<select name="status"><option value="preparation">Préparation</option><option value="in_progress" selected>En cours</option><option value="suspended">Suspendu</option><option value="completed">Terminé</option></select></label><label class="span2">Description<textarea name="description"></textarea></label><button class="btn primary span2">Enregistrer</button></form>`);document.querySelectorAll(".del-project").forEach(b=>b.onclick=()=>confirmBox("Supprimer ce projet ?",()=>post("/api/save",{entity:"project",action:"delete",record:{id:b.dataset.id}})))}
 document.addEventListener("submit",async e=>{if(e.target.id==="projectForm"){e.preventDefault();try{await post("/api/save",{entity:"project",action:"create",record:fd(e.target)});closeModal();await reload();projects();toast("Projet créé")}catch(x){toast(x.message,true)}}});
 function expenses(){$("#content").innerHTML=`<div class="panel"><div class="panelhead"><h2>Dépenses matériaux</h2><button id="addExpense" class="btn primary">+ Nouvelle dépense</button></div>${table(["Date","Projet","Métier","Désignation","Total","Actions"],S.data.expenses.map(x=>`<tr><td>${df(x.expense_date)}</td><td>${esc(x.project_name)}</td><td>${esc(x.trade_name||"—")}</td><td>${esc(x.description)}</td><td class="money"><strong>${cash(x.total_price)}</strong></td><td>${S.session.user.role==="admin"?`<button class="btn small danger del-exp" data-id="${x.id}">Supprimer</button>`:""}</td></tr>`))}</div>`;$("#addExpense").onclick=()=>modal(`<h2>Nouvelle dépense</h2><form id="expenseForm" class="formgrid"><label>Projet<select name="project_id" required>${opts(S.data.projects)}</select></label><label>Métier<select name="trade_id">${opts(S.data.trades)}</select></label><label>Fournisseur<select name="supplier_id">${opts(S.data.suppliers)}</select></label><label>Date<input name="expense_date" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label class="span2">Désignation<input name="description" required></label><label>Quantité<input name="quantity" type="number" step=".01" value="1"></label><label>Unité<input name="unit"></label><label>Prix unitaire<input name="unit_price" type="number" min="0"></label><label>Référence<input name="reference"></label><label class="span2">Notes<textarea name="notes"></textarea></label><button class="btn primary span2">Enregistrer</button></form>`);document.querySelectorAll(".del-exp").forEach(b=>b.onclick=()=>confirmBox("Supprimer cette dépense ?",()=>post("/api/save",{entity:"expense",action:"delete",record:{id:b.dataset.id}})))}
