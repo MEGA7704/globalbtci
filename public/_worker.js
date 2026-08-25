@@ -166,74 +166,102 @@ async function bootstrap(req,env){
     await ensureSchema(env);
     const em=email(env.SUPERADMIN_EMAIL);
 
-    stage="lookup_role";
+    stage="lookup";
     let su=await env.DB.prepare("SELECT * FROM users WHERE role='superadmin' AND status!='deleted' LIMIT 1").first();
 
-    if(su){
-      stage="credential_check";
-      const cr=await env.DB.prepare("SELECT user_id FROM auth_credentials_v2 WHERE user_id=?").bind(su.id).first();
-      if(!cr){
-        stage="credential_repair";
-        await setInitialSuperadminCredential(env,su.id,env.SUPERADMIN_INITIAL_PASSWORD);
-        await env.DB.prepare("UPDATE users SET password_version=password_version+1,status='active',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(su.id).run();
+    if(!su){
+      su=await env.DB.prepare("SELECT * FROM users WHERE lower(email)=lower(?) LIMIT 1").bind(em).first();
+      if(su){
+        stage="repair_profile";
+        await env.DB.prepare("UPDATE users SET company_id=NULL,email=?,full_name='Super Administrateur',role='superadmin',status='active',must_change_password=0,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+          .bind(em,su.id).run();
+      }else{
+        stage="insert_profile";
+        const id=crypto.randomUUID();
+        await insertUserProfile(env,{id,company_id:null,email:em,full_name:"Super Administrateur",role:"superadmin",created_by:null,must_change_password:false});
+        su=await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(id).first();
       }
-      await clearFail(env,ip(req),su.email||em);
-      try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-      return json({ok:true,alreadyInitialized:true,app_version:"13.0.0"});
     }
-
-    stage="lookup_email";
-    su=await env.DB.prepare("SELECT * FROM users WHERE lower(email)=lower(?) LIMIT 1").bind(em).first();
-
-    if(su){
-      stage="repair_profile";
-      await env.DB.prepare("UPDATE users SET company_id=NULL,email=?,full_name='Super Administrateur',role='superadmin',status='active',password_version=password_version+1,must_change_password=0,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(em,su.id).run();
-      stage="repair_credential";
-      await setInitialSuperadminCredential(env,su.id,env.SUPERADMIN_INITIAL_PASSWORD);
-      await clearFail(env,ip(req),em);
-      await audit(env,{id:su.id,company_id:null},"SUPERADMIN_REPAIRED","user",su.id,ip(req));
-      try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-      return json({ok:true,repaired:true,app_version:"13.0.0"});
-    }
-
-    stage="insert_profile";
-    const id=crypto.randomUUID();
-    await insertUserProfile(env,{id,company_id:null,email:em,full_name:"Super Administrateur",role:"superadmin",created_by:null,must_change_password:false});
-
-    stage="insert_credential";
-    await setInitialSuperadminCredential(env,id,env.SUPERADMIN_INITIAL_PASSWORD);
 
     stage="finalize";
     await clearFail(env,ip(req),em);
-    await audit(env,{id,company_id:null},"SUPERADMIN_CREATED","user",id,ip(req));
+    await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,created:true,app_version:"13.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"14.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    let code="BOOTSTRAP_ERROR";
-    if(msg.includes("UNSUPPORTED_USER_COLUMNS"))code=msg;
-    else if(msg.includes("UNIQUE constraint"))code="UNIQUE_CONSTRAINT";
-    else if(msg.includes("NOT NULL constraint"))code="NOT_NULL_CONSTRAINT";
-    else if(msg.includes("CHECK constraint"))code="CHECK_CONSTRAINT";
-    else if(msg.includes("FOREIGN KEY constraint"))code="FOREIGN_KEY_CONSTRAINT";
-    else if(msg.includes("no such table"))code="MISSING_TABLE";
-    else if(msg.includes("no such column"))code="MISSING_COLUMN";
-    return json({error:"Initialisation Super Admin impossible",stage,code,app_version:"13.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"14.0.0"},500);
   }
 }
 async function login(req,env){
-  if(req.method!=="POST")return json({error:"Méthode interdite"},405);const b=await body(req),em=email(b.email),pw=String(b.password||""),addr=ip(req);
+  if(req.method!=="POST")return json({error:"Méthode interdite"},405);
+  const b=await body(req),em=email(b.email),pw=String(b.password||""),addr=ip(req);
+
   if(await limited(env,addr,em))return json({error:"Trop de tentatives. Réessayez dans 15 minutes."},429);
+
   const u=await env.DB.prepare("SELECT * FROM users WHERE lower(email)=lower(?) LIMIT 1").bind(em).first();
-  if(!u||u.status!=="active"){await fail(env,addr,em);return json({error:"Identifiants incorrects"},401)}
+  if(!u||u.status!=="active"){
+    await fail(env,addr,em);
+    return json({error:"Identifiants incorrects"},401);
+  }
+
+  // Super Admin : mot de passe vérifié uniquement contre le secret Cloudflare.
+  // Aucun hash/sel Super Admin n'est requis dans D1.
+  if(u.role==="superadmin"){
+    const configuredEmail=email(env.SUPERADMIN_EMAIL||"");
+    if(em!==configuredEmail || !env.SUPERADMIN_INITIAL_PASSWORD){
+      await fail(env,addr,em);
+      return json({error:"Identifiants incorrects"},401);
+    }
+    if(!await safeEq(pw,String(env.SUPERADMIN_INITIAL_PASSWORD))){
+      await fail(env,addr,em);
+      await audit(env,u,"LOGIN_FAILED","user",u.id,addr,{role:"superadmin"});
+      return json({error:"Identifiants incorrects"},401);
+    }
+
+    await clearFail(env,addr,em);
+    const s=await makeSession(env,u);
+    await audit(env,u,"LOGIN","user",u.id,addr,{auth:"cloudflare_secret"});
+    return json({
+      authenticated:true,
+      csrf:s.csrf,
+      user:{id:u.id,email:u.email,full_name:u.full_name,phone:u.phone,role:u.role,must_change_password:0},
+      company:null,
+      businessPaymentUrl:env.BUSINESS_PAYMENT_URL
+    },200,{"set-cookie":setCookie(s.t)});
+  }
+
+  // Administrateurs et Agents : credentials stockés dans D1, hors données générales.
   const cr=await getCredentialV2(env,u.id);
-  if(!cr){await fail(env,addr,em);return json({error:"Identifiants incorrects"},401)}
+  if(!cr){
+    await fail(env,addr,em);
+    return json({error:"Identifiants incorrects"},401);
+  }
   const h=await hashPassword(pw,cr.password_salt,Number(cr.password_iterations||ITER));
-  if(!await safeEq(h,cr.password_hash)){await fail(env,addr,em);await audit(env,u,"LOGIN_FAILED","user",u.id,addr);return json({error:"Identifiants incorrects"},401)}
-  let c=null;if(u.company_id){c=await env.DB.prepare("SELECT id,name,city,plan,plan_started_at,plan_expires_at,status FROM companies WHERE id=?").bind(u.company_id).first();if(!c||c.status!=="active")return json({error:"Entreprise désactivée"},403);if(Date.parse(c.plan_expires_at)<=Date.now())return json({error:"Abonnement expiré"},403)}
-  await clearFail(env,addr,em);const s=await makeSession(env,u);await audit(env,u,"LOGIN","user",u.id,addr);
-  return json({authenticated:true,csrf:s.csrf,user:{id:u.id,email:u.email,full_name:u.full_name,phone:u.phone,role:u.role,must_change_password:u.must_change_password},company:c,businessPaymentUrl:env.BUSINESS_PAYMENT_URL},200,{"set-cookie":setCookie(s.t)});
+  if(!await safeEq(h,cr.password_hash)){
+    await fail(env,addr,em);
+    await audit(env,u,"LOGIN_FAILED","user",u.id,addr);
+    return json({error:"Identifiants incorrects"},401);
+  }
+
+  let c=null;
+  if(u.company_id){
+    c=await env.DB.prepare("SELECT id,name,city,plan,plan_started_at,plan_expires_at,status FROM companies WHERE id=?").bind(u.company_id).first();
+    if(!c||c.status!=="active")return json({error:"Entreprise désactivée"},403);
+    if(Date.parse(c.plan_expires_at)<=Date.now())return json({error:"Abonnement expiré"},403);
+  }
+
+  await clearFail(env,addr,em);
+  const s=await makeSession(env,u);
+  await audit(env,u,"LOGIN","user",u.id,addr);
+  return json({
+    authenticated:true,
+    csrf:s.csrf,
+    user:{id:u.id,email:u.email,full_name:u.full_name,phone:u.phone,role:u.role,must_change_password:u.must_change_password},
+    company:c,
+    businessPaymentUrl:env.BUSINESS_PAYMENT_URL
+  },200,{"set-cookie":setCookie(s.t)});
 }
 
 async function register(req,env){
@@ -335,9 +363,21 @@ async function resetRequest(req,env){
   return json({ok:true,message:"Si ce compte existe, la demande a été enregistrée."});
 }
 async function changePassword(req,env){
-  const a=await auth(req,env,null,true);if(a.error)return a.error;const b=await body(req),cr=await getCredentialV2(env,a.s.u.id);if(!cr)return json({error:"Compte d'authentification invalide"},400);const h=await hashPassword(String(b.current_password||""),cr.password_salt,Number(cr.password_iterations||ITER));if(!await safeEq(h,cr.password_hash))return json({error:"Mot de passe actuel incorrect"},400);await setCredentialV2(env,a.s.u.id,b.new_password);await env.DB.prepare("UPDATE users SET password_version=password_version+1,must_change_password=0,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(a.s.u.id).run();await audit(env,a.s.u,"CHANGE_PASSWORD","user",a.s.u.id,ip(req));return json({ok:true})}
+  const a=await auth(req,env,null,true);if(a.error)return a.error;
+  if(a.s.u.role==="superadmin"){
+    return json({error:"Le mot de passe Super Admin se modifie uniquement dans le secret Cloudflare SUPERADMIN_INITIAL_PASSWORD."},403);
+  }
+  const b=await body(req),cr=await getCredentialV2(env,a.s.u.id);
+  if(!cr)return json({error:"Compte d'authentification invalide"},400);
+  const h=await hashPassword(String(b.current_password||""),cr.password_salt,Number(cr.password_iterations||ITER));
+  if(!await safeEq(h,cr.password_hash))return json({error:"Mot de passe actuel incorrect"},400);
+  await setCredentialV2(env,a.s.u.id,b.new_password);
+  await env.DB.prepare("UPDATE users SET password_version=password_version+1,must_change_password=0,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(a.s.u.id).run();
+  await audit(env,a.s.u,"CHANGE_PASSWORD","user",a.s.u.id,ip(req));
+  return json({ok:true});
+}
 async function health(req,env){
-  let schema=false,superadmin=false,credential=false;
+  let schema=false,superadmin=false;
   try{
     if(env.DB){
       const r=await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").first();
@@ -345,14 +385,24 @@ async function health(req,env){
       if(schema){
         const u=await env.DB.prepare("SELECT id FROM users WHERE role='superadmin' AND status!='deleted' LIMIT 1").first();
         superadmin=!!u;
-        if(u){
-          const c=await env.DB.prepare("SELECT user_id FROM auth_credentials_v2 WHERE user_id=?").bind(u.id).first();
-          credential=!!c;
-        }
       }
     }
   }catch{}
-  return json({ok:!!env.DB&&!!env.GLOBAL_BT_KV,app_version:"13.0.0",d1_bound:!!env.DB,kv_bound:!!env.GLOBAL_BT_KV,superadmin_email_configured:!!env.SUPERADMIN_EMAIL,superadmin_password_configured:!!env.SUPERADMIN_INITIAL_PASSWORD,session_pepper_configured:!!env.SESSION_PEPPER,schema_ready:schema,superadmin_ready:superadmin,superadmin_credential_ready:credential,auth_store:"auth_credentials_v2"})
+  const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
+  return json({
+    ok:!!env.DB&&!!env.GLOBAL_BT_KV,
+    app_version:"14.0.0",
+    d1_bound:!!env.DB,
+    kv_bound:!!env.GLOBAL_BT_KV,
+    superadmin_email_configured:!!env.SUPERADMIN_EMAIL,
+    superadmin_password_configured:!!env.SUPERADMIN_INITIAL_PASSWORD,
+    session_pepper_configured:!!env.SESSION_PEPPER,
+    schema_ready:schema,
+    superadmin_ready:superadmin,
+    superadmin_credential_ready:superadmin&&secretReady,
+    superadmin_auth:"cloudflare_secret",
+    member_auth_store:"auth_credentials_v2"
+  });
 }
 
 async function route(req,env){

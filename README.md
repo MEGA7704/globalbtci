@@ -126,3 +126,22 @@ Les règles normales restent inchangées :
 - changement de mot de passe : 12 caractères minimum.
 
 Le mot de passe initial n'est jamais écrit dans GitHub, HTML ou JavaScript navigateur.
+
+
+## V14 — Authentification Super Admin par secret Cloudflare
+
+Le Super Admin n'a plus besoin d'un hash/sel dans D1.
+
+Lors de `POST /api/login` :
+- l'e-mail est comparé à `SUPERADMIN_EMAIL`;
+- le mot de passe est comparé de manière sécurisée à `SUPERADMIN_INITIAL_PASSWORD`;
+- toute la vérification reste exclusivement dans `_worker.js`;
+- aucune valeur secrète n'est envoyée au navigateur;
+- KV conserve le rate-limit et la session;
+- D1 conserve uniquement le profil/role du Super Admin et le journal d'audit.
+
+Administrateurs et Agents continuent d'utiliser `auth_credentials_v2` dans D1.
+
+Pour changer le mot de passe Super Admin, remplacer le secret Cloudflare
+`SUPERADMIN_INITIAL_PASSWORD`, puis redéployer. Cela évite toute dépendance aux
+anciennes tables d'authentification.
