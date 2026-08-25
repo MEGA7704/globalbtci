@@ -460,11 +460,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"36.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"37.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"36.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"37.0.0"},500);
   }
 }
 async function login(req,env){
@@ -819,14 +819,18 @@ async function saveCompany(req,env,s,entity,action,r){
       await audit(env,actor,"UPDATE_TRADE","trade",r.id,ip(req),{project_id:projectId,name:tradeName,phase:text(r.phase,80)});return json({ok:true})
     }
     if(action==="delete"&&actor.role==="admin"){
+      const linked=await env.DB.prepare(`SELECT p.status,p.name project_name FROM trades t JOIN projects p ON p.id=t.project_id WHERE t.id=? AND t.company_id=? LIMIT 1`).bind(r.id,c).first();
+      if(linked&&linked.status!=="closed")return json({error:"Suppression impossible : ce métier participe à un projet non clôturé",code:"TRADE_IN_ACTIVE_PROJECT",project:linked.project_name},409);
       await env.DB.prepare("DELETE FROM trades WHERE id=? AND company_id=?").bind(r.id,c).run();
-      await audit(env,actor,"DELETE_TRADE","trade",r.id,ip(req));
-      return json({ok:true})
+      await audit(env,actor,"DELETE_TRADE","trade",r.id,ip(req));return json({ok:true})
     }
   }
   if(entity==="supplier"){
     if(action==="create"){const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO suppliers(id,company_id,name,phone,email,city,address,specialty,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?,?)").bind(id,c,text(r.name,180),text(r.phone,50),email(r.email)||null,text(r.city,120),text(r.address,240),text(r.specialty,160),text(r.notes,800),actor.id).run();return json({ok:true,id})}
-    if(action==="delete"&&actor.role==="admin"){await env.DB.prepare("UPDATE expenses SET supplier_id=NULL WHERE supplier_id=? AND company_id=?").bind(r.id,c).run();await env.DB.prepare("DELETE FROM project_suppliers WHERE supplier_id=? AND company_id=?").bind(r.id,c).run();await env.DB.prepare("DELETE FROM suppliers WHERE id=? AND company_id=?").bind(r.id,c).run();return json({ok:true})}
+    if(action==="delete"&&actor.role==="admin"){
+      const active=await env.DB.prepare(`SELECT p.name FROM project_suppliers ps JOIN projects p ON p.id=ps.project_id WHERE ps.supplier_id=? AND ps.company_id=? AND p.status!='closed' LIMIT 1`).bind(r.id,c).first();
+      if(active)return json({error:"Suppression impossible : ce fournisseur participe à un projet non clôturé",code:"SUPPLIER_IN_ACTIVE_PROJECT",project:active.name},409);
+      await env.DB.prepare("UPDATE expenses SET supplier_id=NULL WHERE supplier_id=? AND company_id=?").bind(r.id,c).run();await env.DB.prepare("DELETE FROM project_suppliers WHERE supplier_id=? AND company_id=?").bind(r.id,c).run();await env.DB.prepare("DELETE FROM suppliers WHERE id=? AND company_id=?").bind(r.id,c).run();return json({ok:true})}
   }
   if(entity==="expense"){
     if(action==="create"){const wp=await writableProject(env,c,r.project_id);if(wp.error)return wp.error;const total=Math.round(qty(r.quantity)*money(r.unit_price)),id=crypto.randomUUID();await env.DB.prepare("INSERT INTO expenses(id,company_id,project_id,trade_id,supplier_id,expense_date,description,quantity,unit,unit_price,total_price,reference,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,c,r.project_id,r.trade_id||null,r.supplier_id||null,today(r.expense_date),text(r.description,500),qty(r.quantity),text(r.unit,40),money(r.unit_price),total,text(r.reference,120),text(r.notes,800),actor.id).run();await audit(env,actor,"CREATE_EXPENSE","expense",id,ip(req),{total});return json({ok:true,id,total})}
@@ -863,7 +867,11 @@ async function saveCompany(req,env,s,entity,action,r){
       const ex=await env.DB.prepare("SELECT id FROM project_suppliers WHERE company_id=? AND project_id=? AND supplier_id=?").bind(c,r.project_id,r.supplier_id).first();if(ex)return json({error:"Ce fournisseur est déjà affecté au projet"},409);
       const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO project_suppliers(id,company_id,project_id,supplier_id,notes) VALUES(?,?,?,?,?)").bind(id,c,r.project_id,r.supplier_id,text(r.notes,500)).run();return json({ok:true,id});
     }
-    if(action==="delete"){await env.DB.prepare("DELETE FROM project_suppliers WHERE id=? AND company_id=? AND project_id=?").bind(r.id,c,r.project_id).run();return json({ok:true});}
+    if(action==="delete"){
+      const p=await env.DB.prepare("SELECT status,name FROM projects WHERE id=? AND company_id=?").bind(r.project_id,c).first();
+      if(p&&p.status!=="closed")return json({error:"Suppression impossible : ce fournisseur participe à un projet non clôturé",code:"SUPPLIER_IN_ACTIVE_PROJECT",project:p.name},409);
+      await env.DB.prepare("DELETE FROM project_suppliers WHERE id=? AND company_id=? AND project_id=?").bind(r.id,c,r.project_id).run();return json({ok:true});
+    }
   }
 
   if(entity==="user"&&actor.role==="admin"){
@@ -916,7 +924,7 @@ async function cryptoHealth(req,env){
     const test=await makeMemberCredential("GlobalBT-Test-2026!");
     return json({
       ok:true,
-      app_version:"36.0.0",
+      app_version:"37.0.0",
       algorithm:"PBKDF2-SHA-256",
       iterations:test.password_iterations,
       elapsed_ms:Date.now()-started
@@ -924,7 +932,7 @@ async function cryptoHealth(req,env){
   }catch(e){
     return json({
       ok:false,
-      app_version:"36.0.0",
+      app_version:"37.0.0",
       code:e?.message||"PASSWORD_HASH_FAILED",
       elapsed_ms:Date.now()-started
     },500);
@@ -958,7 +966,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"36.0.0",
+    app_version:"37.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,
