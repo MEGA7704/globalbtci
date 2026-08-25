@@ -91,6 +91,21 @@ async function setCredentialV2(env,userId,password){
       updated_at=CURRENT_TIMESTAMP`)
     .bind(userId,hash,salt,ITER).run();
 }
+async function setInitialSuperadminCredential(env,userId,password){
+  // Le mot de passe initial vient exclusivement d'un secret Cloudflare.
+  // Il peut être plus court que la règle des membres, mais doit rester raisonnable.
+  if(String(password).length<8)throw new Error("SUPERADMIN_INITIAL_PASSWORD_TOO_SHORT");
+  const salt=b64(bytes(16));
+  const hash=await hashPassword(String(password),salt);
+  await env.DB.prepare(`INSERT INTO auth_credentials_v2(user_id,password_hash,password_salt,password_iterations,updated_at)
+    VALUES(?,?,?,?,CURRENT_TIMESTAMP)
+    ON CONFLICT(user_id) DO UPDATE SET
+      password_hash=excluded.password_hash,
+      password_salt=excluded.password_salt,
+      password_iterations=excluded.password_iterations,
+      updated_at=CURRENT_TIMESTAMP`)
+    .bind(userId,hash,salt,ITER).run();
+}
 async function getCredentialV2(env,userId){
   let cr=await env.DB.prepare("SELECT * FROM auth_credentials_v2 WHERE user_id=?").bind(userId).first();
   if(cr)return cr;
@@ -159,12 +174,12 @@ async function bootstrap(req,env){
       const cr=await env.DB.prepare("SELECT user_id FROM auth_credentials_v2 WHERE user_id=?").bind(su.id).first();
       if(!cr){
         stage="credential_repair";
-        await setCredentialV2(env,su.id,env.SUPERADMIN_INITIAL_PASSWORD);
+        await setInitialSuperadminCredential(env,su.id,env.SUPERADMIN_INITIAL_PASSWORD);
         await env.DB.prepare("UPDATE users SET password_version=password_version+1,status='active',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(su.id).run();
       }
       await clearFail(env,ip(req),su.email||em);
       try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-      return json({ok:true,alreadyInitialized:true,app_version:"12.0.0"});
+      return json({ok:true,alreadyInitialized:true,app_version:"13.0.0"});
     }
 
     stage="lookup_email";
@@ -174,11 +189,11 @@ async function bootstrap(req,env){
       stage="repair_profile";
       await env.DB.prepare("UPDATE users SET company_id=NULL,email=?,full_name='Super Administrateur',role='superadmin',status='active',password_version=password_version+1,must_change_password=0,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(em,su.id).run();
       stage="repair_credential";
-      await setCredentialV2(env,su.id,env.SUPERADMIN_INITIAL_PASSWORD);
+      await setInitialSuperadminCredential(env,su.id,env.SUPERADMIN_INITIAL_PASSWORD);
       await clearFail(env,ip(req),em);
       await audit(env,{id:su.id,company_id:null},"SUPERADMIN_REPAIRED","user",su.id,ip(req));
       try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-      return json({ok:true,repaired:true,app_version:"12.0.0"});
+      return json({ok:true,repaired:true,app_version:"13.0.0"});
     }
 
     stage="insert_profile";
@@ -186,13 +201,13 @@ async function bootstrap(req,env){
     await insertUserProfile(env,{id,company_id:null,email:em,full_name:"Super Administrateur",role:"superadmin",created_by:null,must_change_password:false});
 
     stage="insert_credential";
-    await setCredentialV2(env,id,env.SUPERADMIN_INITIAL_PASSWORD);
+    await setInitialSuperadminCredential(env,id,env.SUPERADMIN_INITIAL_PASSWORD);
 
     stage="finalize";
     await clearFail(env,ip(req),em);
     await audit(env,{id,company_id:null},"SUPERADMIN_CREATED","user",id,ip(req));
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,created:true,app_version:"12.0.0"});
+    return json({ok:true,created:true,app_version:"13.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
@@ -204,7 +219,7 @@ async function bootstrap(req,env){
     else if(msg.includes("FOREIGN KEY constraint"))code="FOREIGN_KEY_CONSTRAINT";
     else if(msg.includes("no such table"))code="MISSING_TABLE";
     else if(msg.includes("no such column"))code="MISSING_COLUMN";
-    return json({error:"Initialisation Super Admin impossible",stage,code,app_version:"12.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code,app_version:"13.0.0"},500);
   }
 }
 async function login(req,env){
@@ -337,7 +352,7 @@ async function health(req,env){
       }
     }
   }catch{}
-  return json({ok:!!env.DB&&!!env.GLOBAL_BT_KV,app_version:"12.0.0",d1_bound:!!env.DB,kv_bound:!!env.GLOBAL_BT_KV,superadmin_email_configured:!!env.SUPERADMIN_EMAIL,superadmin_password_configured:!!env.SUPERADMIN_INITIAL_PASSWORD,session_pepper_configured:!!env.SESSION_PEPPER,schema_ready:schema,superadmin_ready:superadmin,superadmin_credential_ready:credential,auth_store:"auth_credentials_v2"})
+  return json({ok:!!env.DB&&!!env.GLOBAL_BT_KV,app_version:"13.0.0",d1_bound:!!env.DB,kv_bound:!!env.GLOBAL_BT_KV,superadmin_email_configured:!!env.SUPERADMIN_EMAIL,superadmin_password_configured:!!env.SUPERADMIN_INITIAL_PASSWORD,session_pepper_configured:!!env.SESSION_PEPPER,schema_ready:schema,superadmin_ready:superadmin,superadmin_credential_ready:credential,auth_store:"auth_credentials_v2"})
 }
 
 async function route(req,env){

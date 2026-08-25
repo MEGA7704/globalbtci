@@ -112,3 +112,17 @@ GLOBAL BT utilise maintenant `auth_credentials_v2`.
 - si un ancien credential valide existe, il peut être recopié vers V2 à la première connexion;
 - les nouveaux comptes, changements et réinitialisations utilisent exclusivement V2;
 - `/api/health` vérifie le credential Super Admin dans V2.
+
+
+## V13 — Correction mot de passe initial Super Admin
+
+Le mot de passe initial configuré dans le secret Cloudflare peut avoir entre 8 et 11 caractères.
+Cette exception ne concerne que le bootstrap Super Admin.
+
+Les règles normales restent inchangées :
+- inscription Administrateur : 12 caractères minimum ;
+- création Agent : 12 caractères minimum ;
+- réinitialisation : 12 caractères minimum ;
+- changement de mot de passe : 12 caractères minimum.
+
+Le mot de passe initial n'est jamais écrit dans GitHub, HTML ou JavaScript navigateur.
