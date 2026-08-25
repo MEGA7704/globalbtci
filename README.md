@@ -284,3 +284,15 @@ en début/fin de nom.
   y compris ceux créés dynamiquement dans les popups ;
 - connexion, inscription, création d'Agent, création d'entreprise,
   réinitialisation et changement de mot de passe couverts.
+
+
+## V25 — Bibliothèque professionnelle des corps de métier
+
+- 62 métiers BTP disponibles par défaut ;
+- recherche instantanée ;
+- sélection multiple lors de la création d'un projet ;
+- ajout de métiers personnalisés ;
+- création automatique des métiers sélectionnés après création du projet ;
+- compteur de métiers par projet ;
+- page Corps de métier avec bibliothèque rapide et saisie personnalisée ;
+- les métiers restent disponibles dans dépenses, main-d'œuvre, rapports et tableau de bord.

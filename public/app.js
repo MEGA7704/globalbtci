@@ -4,6 +4,107 @@ const names={dashboard:"Tableau de bord",projects:"Projets",expenses:"Dépenses"
 
 const actionLocks=new WeakMap();
 
+const DEFAULT_TRADES=[
+  "Terrassement","Implantation","Fouilles","Fondation","Gros œuvre","Maçonnerie",
+  "Béton armé","Ferraillage","Coffrage","Charpente bois","Charpente métallique",
+  "Couverture","Étanchéité","Plomberie sanitaire","Électricité bâtiment",
+  "Climatisation","Ventilation","Menuiserie bois","Menuiserie aluminium",
+  "Menuiserie métallique","Serrurerie","Vitrerie","Carrelage","Faïence",
+  "Revêtement de sol","Enduit","Plâtrerie","Faux plafond","Staff / décoration",
+  "Peinture","Ravalement de façade","Isolation thermique","Isolation acoustique",
+  "Assainissement","Canalisation","Voirie et réseaux divers (VRD)","Pavage",
+  "Aménagement extérieur","Aménagement paysager","Forage","Installation de château d’eau",
+  "Électricité extérieure","Éclairage extérieur","Réseau informatique",
+  "Vidéosurveillance","Contrôle d’accès","Sécurité incendie","Installation solaire",
+  "Groupe électrogène","Ascenseur","Nettoyage de chantier","Démolition",
+  "Évacuation des gravats","Location d’engins","Transport de matériaux","Topographie",
+  "Géomètre","Architecture","Bureau d’études techniques","Contrôle technique",
+  "Suivi de chantier","Autres travaux"
+];
+
+function renderTradePicker(selected=[]){
+  const set=new Set(selected);
+  return `
+    <div class="trade-picker">
+      <div class="trade-picker-head">
+        <div>
+          <strong>Corps de métier du projet</strong>
+          <small>Sélectionnez les métiers à utiliser sur ce chantier.</small>
+        </div>
+        <span id="tradeSelectedCount" class="trade-count">${set.size} sélectionné(s)</span>
+      </div>
+      <input id="tradeSearch" class="trade-search" type="search" placeholder="Rechercher un métier...">
+      <div id="tradeLibrary" class="trade-library">
+        ${DEFAULT_TRADES.map(t=>`
+          <label class="trade-option" data-trade-name="${esc(t.toLowerCase())}">
+            <input type="checkbox" name="project_trades" value="${esc(t)}" ${set.has(t)?"checked":""}>
+            <span>${esc(t)}</span>
+          </label>`).join("")}
+      </div>
+      <div class="custom-trade-box">
+        <input id="customTradeInput" type="text" placeholder="Ajouter un métier personnalisé...">
+        <button id="addCustomTrade" class="btn secondary" type="button">+ Ajouter</button>
+      </div>
+      <div id="customTradeList" class="custom-trade-list"></div>
+    </div>`;
+}
+
+function initTradePicker(root=document){
+  const search=root.querySelector("#tradeSearch");
+  const library=root.querySelector("#tradeLibrary");
+  const count=root.querySelector("#tradeSelectedCount");
+  const customInput=root.querySelector("#customTradeInput");
+  const addBtn=root.querySelector("#addCustomTrade");
+  const customList=root.querySelector("#customTradeList");
+  if(!library)return;
+
+  const updateCount=()=>{
+    const n=library.querySelectorAll('input[name="project_trades"]:checked').length+
+      (customList?.querySelectorAll("[data-custom-trade]").length||0);
+    if(count)count.textContent=`${n} sélectionné(s)`;
+  };
+
+  search?.addEventListener("input",()=>{
+    const q=search.value.trim().toLowerCase();
+    library.querySelectorAll(".trade-option").forEach(el=>{
+      el.classList.toggle("hidden",q && !el.dataset.tradeName.includes(q));
+    });
+  });
+
+  library.querySelectorAll('input[name="project_trades"]').forEach(i=>i.addEventListener("change",updateCount));
+
+  const addCustom=()=>{
+    const raw=(customInput?.value||"").trim();
+    if(!raw)return;
+    const exists=[...library.querySelectorAll('input[name="project_trades"]')].some(i=>i.value.toLowerCase()===raw.toLowerCase()) ||
+      [...customList.querySelectorAll("[data-custom-trade]")].some(i=>i.dataset.customTrade.toLowerCase()===raw.toLowerCase());
+    if(exists){
+      toast("Ce métier est déjà dans la sélection.",true);
+      return;
+    }
+    const chip=document.createElement("span");
+    chip.className="custom-trade-chip";
+    chip.dataset.customTrade=raw;
+    chip.innerHTML=`${esc(raw)} <button type="button" aria-label="Retirer">×</button>`;
+    chip.querySelector("button").onclick=()=>{chip.remove();updateCount()};
+    customList.appendChild(chip);
+    customInput.value="";
+    updateCount();
+  };
+
+  addBtn?.addEventListener("click",addCustom);
+  customInput?.addEventListener("keydown",e=>{
+    if(e.key==="Enter"){e.preventDefault();addCustom()}
+  });
+  updateCount();
+}
+
+function collectProjectTrades(root=document){
+  const base=[...root.querySelectorAll('input[name="project_trades"]:checked')].map(i=>i.value.trim());
+  const custom=[...root.querySelectorAll("[data-custom-trade]")].map(i=>i.dataset.customTrade.trim());
+  return [...new Set([...base,...custom].filter(Boolean))];
+}
+
 function setBusy(el,busy,label="Traitement..."){
   if(!el)return;
   if(busy){
@@ -323,14 +424,154 @@ function dashboard(){
     ${suspended?`<div class="panel alert-panel"><strong>Attention :</strong> ${suspended} projet(s) suspendu(s) nécessitent un suivi.</div>`:""}
   `;
 }
-function projects(){$("#content").innerHTML=`<div class="panel"><div class="panelhead"><h2>Projets</h2><button id="addProject" class="btn primary">+ Nouveau projet</button></div>${table(["Projet","Localité","Budget","Statut","Actions"],S.data.projects.map(x=>`<tr><td><strong>${esc(x.name)}</strong></td><td>${esc(x.location||"")}</td><td class="money">${cash(x.budget)}</td><td><span class="status">${esc(x.status)}</span></td><td>${S.session.user.role==="admin"?`<button class="btn small danger del-project" data-id="${x.id}">Supprimer</button>`:""}</td></tr>`))}</div>`;$("#addProject").onclick=()=>modal(`<h2>Nouveau projet</h2><form id="projectForm" class="formgrid"><label>Nom<input name="name" required></label><label>Type<input name="project_type" value="Bâtiment"></label><label>Localité<input name="location"></label><label>Budget<input name="budget" type="number" min="0"></label><label>Maître d'ouvrage<input name="owner_name"></label><label>Responsable<input name="manager_name"></label><label>Date début<input name="start_date" type="date"></label><label>Date fin<input name="end_date" type="date"></label><label>Statut<select name="status"><option value="preparation">Préparation</option><option value="in_progress" selected>En cours</option><option value="suspended">Suspendu</option><option value="completed">Terminé</option></select></label><label class="span2">Description<textarea name="description"></textarea></label><button class="btn primary span2">Enregistrer</button></form>`);document.querySelectorAll(".del-project").forEach(b=>b.onclick=()=>confirmBox("Supprimer ce projet ?",()=>post("/api/save",{entity:"project",action:"delete",record:{id:b.dataset.id}})))}
-document.addEventListener("submit",async e=>{if(e.target.id==="projectForm"){e.preventDefault();try{await post("/api/save",{entity:"project",action:"create",record:fd(e.target)});closeModal();await reload();projects();toast("Projet créé")}catch(x){toast(x.message,true)}}});
+function projects(){
+  $("#content").innerHTML=`<div class="panel">
+    <div class="panelhead">
+      <div><h2>Projets</h2><p class="muted">Créez un projet et affectez immédiatement ses corps de métier.</p></div>
+      <button id="addProject" class="btn primary">+ Nouveau projet</button>
+    </div>
+    ${table(["Projet","Localité","Budget","Statut","Métiers","Actions"],S.data.projects.map(x=>{
+      const count=(S.data.trades||[]).filter(t=>t.project_id===x.id).length;
+      return `<tr>
+        <td><strong>${esc(x.name)}</strong></td>
+        <td>${esc(x.location||"")}</td>
+        <td class="money">${cash(x.budget)}</td>
+        <td><span class="status">${esc(x.status)}</span></td>
+        <td>${count} métier(s)</td>
+        <td>${S.session.user.role==="admin"?`<button class="btn small danger del-project" data-id="${x.id}">Supprimer</button>`:""}</td>
+      </tr>`}).join(""))}
+  </div>`;
+
+  $("#addProject").onclick=()=>modal(`
+    <h2>Nouveau projet</h2>
+    <form id="projectForm" class="formgrid">
+      <label>Nom<input name="name" required></label>
+      <label>Type<input name="project_type" value="Bâtiment"></label>
+      <label>Localité<input name="location"></label>
+      <label>Budget<input name="budget" type="number" min="0"></label>
+      <label>Maître d'ouvrage<input name="owner_name"></label>
+      <label>Responsable<input name="manager_name"></label>
+      <label>Date début<input name="start_date" type="date"></label>
+      <label>Date fin<input name="end_date" type="date"></label>
+      <label>Statut<select name="status">
+        <option value="preparation">Préparation</option>
+        <option value="in_progress" selected>En cours</option>
+        <option value="suspended">Suspendu</option>
+        <option value="completed">Terminé</option>
+      </select></label>
+      <label class="span2">Description<textarea name="description"></textarea></label>
+      <div class="span2">${renderTradePicker()}</div>
+      <button class="btn primary span2" type="submit">Créer le projet et ses métiers</button>
+    </form>`);
+  initTradePicker($("#modalBody"));
+
+  document.querySelectorAll(".del-project").forEach(b=>b.onclick=()=>confirmBox(
+    "Supprimer ce projet ?",
+    ()=>post("/api/save",{entity:"project",action:"delete",record:{id:b.dataset.id}})
+  ));
+}
+
+document.addEventListener("submit",async e=>{
+  if(e.target.id==="projectForm"){
+    e.preventDefault();
+    const form=e.target;
+    const trades=collectProjectTrades(form);
+    try{
+      const project=await post("/api/save",{entity:"project",action:"create",record:fd(form)});
+      let created=0,duplicates=0,failed=0;
+
+      for(const tradeName of trades){
+        try{
+          await post("/api/save",{
+            entity:"trade",
+            action:"create",
+            record:{project_id:project.id,name:tradeName,description:""}
+          });
+          created++;
+        }catch(err){
+          if(String(err.message).includes("TRADE_ALREADY_EXISTS") || String(err.message).includes("existe déjà"))duplicates++;
+          else failed++;
+        }
+      }
+
+      closeModal();
+      await reload();
+      projects();
+      const detail=trades.length?` · ${created} métier(s) ajouté(s)${duplicates?` · ${duplicates} déjà existant(s)`:""}${failed?` · ${failed} non ajouté(s)`:""}`:"";
+      toast("Projet créé"+detail,failed>0);
+    }catch(x){
+      toast(x.message,true);
+    }finally{
+      releaseForm(form);
+    }
+  }
+});
 function expenses(){$("#content").innerHTML=`<div class="panel"><div class="panelhead"><h2>Dépenses matériaux</h2><button id="addExpense" class="btn primary">+ Nouvelle dépense</button></div>${table(["Date","Projet","Métier","Désignation","Total","Actions"],S.data.expenses.map(x=>`<tr><td>${df(x.expense_date)}</td><td>${esc(x.project_name)}</td><td>${esc(x.trade_name||"—")}</td><td>${esc(x.description)}</td><td class="money"><strong>${cash(x.total_price)}</strong></td><td>${S.session.user.role==="admin"?`<button class="btn small danger del-exp" data-id="${x.id}">Supprimer</button>`:""}</td></tr>`))}</div>`;$("#addExpense").onclick=()=>modal(`<h2>Nouvelle dépense</h2><form id="expenseForm" class="formgrid"><label>Projet<select name="project_id" required>${opts(S.data.projects)}</select></label><label>Métier<select name="trade_id">${opts(S.data.trades)}</select></label><label>Fournisseur<select name="supplier_id">${opts(S.data.suppliers)}</select></label><label>Date<input name="expense_date" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label class="span2">Désignation<input name="description" required></label><label>Quantité<input name="quantity" type="number" step=".01" value="1"></label><label>Unité<input name="unit"></label><label>Prix unitaire<input name="unit_price" type="number" min="0"></label><label>Référence<input name="reference"></label><label class="span2">Notes<textarea name="notes"></textarea></label><button class="btn primary span2">Enregistrer</button></form>`);document.querySelectorAll(".del-exp").forEach(b=>b.onclick=()=>confirmBox("Supprimer cette dépense ?",()=>post("/api/save",{entity:"expense",action:"delete",record:{id:b.dataset.id}})))}
 document.addEventListener("submit",async e=>{if(e.target.id==="expenseForm"){e.preventDefault();try{await post("/api/save",{entity:"expense",action:"create",record:fd(e.target)});closeModal();await reload();expenses();toast("Dépense enregistrée")}catch(x){toast(x.message,true)}}});
 function labor(){$("#content").innerHTML=`<div class="panel"><div class="panelhead"><h2>Main-d'œuvre</h2><button id="addLabor" class="btn primary">+ Ajouter</button></div>${table(["Date","Projet","Prestataire","Travaux","Montant","Actions"],S.data.labor.map(x=>`<tr><td>${df(x.expense_date)}</td><td>${esc(x.project_name)}</td><td>${esc(x.worker_name||"")}</td><td>${esc(x.description)}</td><td class="money">${cash(x.amount)}</td><td>${S.session.user.role==="admin"?`<button class="btn small danger del-labor" data-id="${x.id}">Supprimer</button>`:""}</td></tr>`))}</div>`;$("#addLabor").onclick=()=>modal(`<h2>Main-d'œuvre</h2><form id="laborForm" class="formgrid"><label>Projet<select name="project_id" required>${opts(S.data.projects)}</select></label><label>Métier<select name="trade_id">${opts(S.data.trades)}</select></label><label>Date<input name="expense_date" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label>Prestataire<input name="worker_name"></label><label class="span2">Travaux<input name="description" required></label><label>Montant<input name="amount" type="number" min="0"></label><label>Mode de paiement<select name="payment_method"><option>Espèces</option><option>Mobile Money</option><option>Virement</option><option>Chèque</option></select></label><label>Référence<input name="reference"></label><label class="span2">Notes<textarea name="notes"></textarea></label><button class="btn primary span2">Enregistrer</button></form>`);document.querySelectorAll(".del-labor").forEach(b=>b.onclick=()=>confirmBox("Supprimer cette main-d'œuvre ?",()=>post("/api/save",{entity:"labor",action:"delete",record:{id:b.dataset.id}})))}
 document.addEventListener("submit",async e=>{if(e.target.id==="laborForm"){e.preventDefault();try{await post("/api/save",{entity:"labor",action:"create",record:fd(e.target)});closeModal();await reload();labor();toast("Main-d'œuvre enregistrée")}catch(x){toast(x.message,true)}}});
-function trades(){$("#content").innerHTML=`<div class="panel"><div class="panelhead"><h2>Corps de métier</h2><button id="addTrade" class="btn primary">+ Ajouter</button></div>${table(["Projet","Métier","Description","Actions"],S.data.trades.map(x=>`<tr><td>${esc(S.data.projects.find(p=>p.id===x.project_id)?.name||"")}</td><td>${esc(x.name)}</td><td>${esc(x.description||"")}</td><td>${S.session.user.role==="admin"?`<button class="btn small danger del-trade" data-id="${x.id}">Supprimer</button>`:""}</td></tr>`))}</div>`;$("#addTrade").onclick=()=>modal(`<h2>Nouveau métier</h2><form id="tradeForm"><label>Projet<select name="project_id" required>${opts(S.data.projects)}</select></label><label>Nom<input name="name" required></label><label>Description<textarea name="description"></textarea></label><button class="btn primary full">Ajouter</button></form>`);document.querySelectorAll(".del-trade").forEach(b=>b.onclick=()=>confirmBox("Supprimer ce métier ?",()=>post("/api/save",{entity:"trade",action:"delete",record:{id:b.dataset.id}})))}
-document.addEventListener("submit",async e=>{if(e.target.id==="tradeForm"){e.preventDefault();try{await post("/api/save",{entity:"trade",action:"create",record:fd(e.target)});closeModal();await reload();trades();toast("Métier ajouté")}catch(x){toast(x.message,true)}}});
+function trades(){
+  $("#content").innerHTML=`<div class="panel">
+    <div class="panelhead">
+      <div><h2>Corps de métier</h2><p class="muted">Bibliothèque standard + métiers personnalisés.</p></div>
+      <button id="addTrade" class="btn primary">+ Ajouter</button>
+    </div>
+    ${table(["Projet","Métier","Description","Actions"],S.data.trades.map(x=>`
+      <tr>
+        <td>${esc(S.data.projects.find(p=>p.id===x.project_id)?.name||"")}</td>
+        <td><strong>${esc(x.name)}</strong></td>
+        <td>${esc(x.description||"")}</td>
+        <td>${S.session.user.role==="admin"?`<button class="btn small danger del-trade" data-id="${x.id}">Supprimer</button>`:""}</td>
+      </tr>`))}
+  </div>`;
+
+  $("#addTrade").onclick=()=>modal(`
+    <h2>Ajouter un corps de métier</h2>
+    <form id="tradeForm">
+      <label>Projet<select name="project_id" required>${opts(S.data.projects)}</select></label>
+      <label>Rechercher dans la bibliothèque
+        <input id="singleTradeSearch" type="search" placeholder="Ex. maçonnerie, plomberie...">
+      </label>
+      <div id="singleTradeLibrary" class="single-trade-library">
+        ${DEFAULT_TRADES.map(t=>`<button type="button" class="single-trade-choice" data-name="${esc(t)}">${esc(t)}</button>`).join("")}
+      </div>
+      <label>Métier sélectionné ou personnalisé<input id="tradeNameInput" name="name" required placeholder="Choisir ci-dessus ou saisir un métier"></label>
+      <label>Description<textarea name="description"></textarea></label>
+      <button class="btn primary full" type="submit">Ajouter le métier</button>
+    </form>`);
+
+  const search=$("#singleTradeSearch"),lib=$("#singleTradeLibrary"),nameInput=$("#tradeNameInput");
+  search?.addEventListener("input",()=>{
+    const q=search.value.trim().toLowerCase();
+    lib.querySelectorAll(".single-trade-choice").forEach(b=>b.classList.toggle("hidden",q&&!b.dataset.name.toLowerCase().includes(q)));
+  });
+  lib?.querySelectorAll(".single-trade-choice").forEach(b=>b.onclick=()=>{
+    nameInput.value=b.dataset.name;
+    lib.querySelectorAll(".single-trade-choice").forEach(x=>x.classList.toggle("selected",x===b));
+  });
+
+  document.querySelectorAll(".del-trade").forEach(b=>b.onclick=()=>confirmBox(
+    "Supprimer ce métier ?",
+    ()=>post("/api/save",{entity:"trade",action:"delete",record:{id:b.dataset.id}})
+  ));
+}
+
+document.addEventListener("submit",async e=>{
+  if(e.target.id==="tradeForm"){
+    e.preventDefault();
+    try{
+      await post("/api/save",{entity:"trade",action:"create",record:fd(e.target)});
+      closeModal();
+      await reload();
+      trades();
+      toast("Métier ajouté");
+    }catch(x){
+      toast(x.message,true);
+    }finally{
+      releaseForm(e.target);
+    }
+  }
+});
 function suppliers(){$("#content").innerHTML=`<div class="panel"><div class="panelhead"><h2>Fournisseurs</h2><button id="addSupplier" class="btn primary">+ Ajouter</button></div>${table(["Nom","Contact","Ville","Spécialité","Actions"],S.data.suppliers.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.phone||"")}</td><td>${esc(x.city||"")}</td><td>${esc(x.specialty||"")}</td><td>${S.session.user.role==="admin"?`<button class="btn small danger del-sup" data-id="${x.id}">Supprimer</button>`:""}</td></tr>`))}</div>`;$("#addSupplier").onclick=()=>modal(`<h2>Nouveau fournisseur</h2><form id="supplierForm" class="formgrid"><label>Nom<input name="name" required></label><label>Téléphone<input name="phone"></label><label>E-mail<input name="email" type="email"></label><label>Ville<input name="city"></label><label>Adresse<input name="address"></label><label>Spécialité<input name="specialty"></label><label class="span2">Notes<textarea name="notes"></textarea></label><button class="btn primary span2">Ajouter</button></form>`);document.querySelectorAll(".del-sup").forEach(b=>b.onclick=()=>confirmBox("Supprimer ce fournisseur ?",()=>post("/api/save",{entity:"supplier",action:"delete",record:{id:b.dataset.id}})))}
 document.addEventListener("submit",async e=>{if(e.target.id==="supplierForm"){e.preventDefault();try{await post("/api/save",{entity:"supplier",action:"create",record:fd(e.target)});closeModal();await reload();suppliers();toast("Fournisseur ajouté")}catch(x){toast(x.message,true)}}});
 function users(){$("#content").innerHTML=`<div class="panel"><div class="panelhead"><h2>Agents</h2><button id="addAgent" class="btn primary">+ Nouvel Agent</button></div>${table(["Nom","E-mail","Rôle","Statut","Actions"],S.data.users.map(x=>`<tr><td>${esc(x.full_name)}</td><td>${esc(x.email)}</td><td>${esc(x.role)}</td><td><span class="status ${x.status}">${esc(x.status)}</span><br><small>${Number(x.credential_ready)?"Accès prêt":"Mot de passe à réinitialiser"}</small></td><td>${x.role==="agent"?`<div class="actions"><button class="btn small secondary reset-agent" data-id="${x.id}">Mot de passe</button><button class="btn small secondary toggle-agent" data-id="${x.id}" data-act="${x.status==="active"?"disable":"activate"}">${x.status==="active"?"Désactiver":"Activer"}</button><button class="btn small danger del-agent" data-id="${x.id}">Supprimer</button></div>`:"—"}</td></tr>`))}<h3 style="margin-top:18px">Demandes mot de passe</h3>${table(["Date","Agent","E-mail","Statut","Action"],S.data.resets.map(x=>`<tr><td>${df(x.created_at)}</td><td>${esc(x.full_name||"")}</td><td>${esc(x.email)}</td><td>${esc(x.status)}</td><td>${x.status==="pending"?`<button class="btn small secondary reset-request" data-id="${x.user_id}" data-rid="${x.id}">Réinitialiser</button>`:"—"}</td></tr>`))}</div>`;$("#addAgent").onclick=()=>modal(`<h2>Nouvel Agent</h2><form id="agentForm"><label>Nom<input name="full_name" required></label><label>E-mail<input name="email" type="email" required></label><label>Téléphone<input name="phone"></label><label>Mot de passe initial<input name="password" type="password" minlength="12" required></label><button class="btn primary full">Créer</button></form>`);document.querySelectorAll(".toggle-agent").forEach(b=>b.onclick=()=>postSaveUser(b.dataset.id,b.dataset.act));document.querySelectorAll(".del-agent").forEach(b=>b.onclick=()=>confirmBox("Supprimer cet Agent ?",()=>post("/api/save",{entity:"user",action:"delete",record:{id:b.dataset.id}})));document.querySelectorAll(".reset-agent").forEach(b=>b.onclick=()=>resetModal(b.dataset.id,null,false));document.querySelectorAll(".reset-request").forEach(b=>b.onclick=()=>resetModal(b.dataset.id,b.dataset.rid,false))}

@@ -37,3 +37,21 @@ button:disabled,.btn:disabled{cursor:not-allowed;opacity:.68;transform:none!impo
 .password-toggle:hover{background:#dfece9}
 label>.password-field-wrap{margin-top:6px}
 label>.password-field-wrap input{margin-top:0}
+
+/* ===== V25 BIBLIOTHÈQUE DES MÉTIERS ===== */
+.trade-picker{border:1px solid var(--line);border-radius:15px;padding:14px;background:#f9fbfa}
+.trade-picker-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}
+.trade-picker-head strong,.trade-picker-head small{display:block}.trade-picker-head small{margin-top:3px;color:var(--muted)}
+.trade-count{background:#e6f0ed;color:#164b45;border-radius:999px;padding:6px 9px;font-size:.72rem;font-weight:850;white-space:nowrap}
+.trade-search{margin:0 0 10px!important}
+.trade-library{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:7px;max-height:290px;overflow:auto;padding:4px}
+.trade-option{display:flex;align-items:center;gap:8px;margin:0;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;font-size:.82rem;font-weight:650}
+.trade-option:hover{border-color:#aacbc5;background:#f3faf8}.trade-option input{width:auto;margin:0}
+.custom-trade-box{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}.custom-trade-box input{margin:0}
+.custom-trade-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.custom-trade-chip{display:inline-flex;align-items:center;gap:6px;padding:7px 9px;border-radius:999px;background:#0d5c54;color:#fff;font-size:.76rem;font-weight:750}
+.custom-trade-chip button{border:0;background:#ffffff22;color:#fff;width:20px;height:20px;border-radius:50%;cursor:pointer}
+.single-trade-library{display:flex;flex-wrap:wrap;gap:6px;max-height:230px;overflow:auto;padding:8px 2px 12px}
+.single-trade-choice{border:1px solid var(--line);background:#fff;color:#294943;border-radius:999px;padding:7px 10px;font-size:.76rem;font-weight:750;cursor:pointer}
+.single-trade-choice:hover,.single-trade-choice.selected{background:#0d5c54;color:#fff;border-color:#0d5c54}
+@media(max-width:620px){.trade-picker-head{flex-direction:column}.custom-trade-box{grid-template-columns:1fr}.trade-library{grid-template-columns:1fr}}
