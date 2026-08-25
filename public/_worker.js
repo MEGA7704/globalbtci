@@ -284,22 +284,73 @@ async function bootstrap(req,env){
   if(req.method!=="POST")return response({error:"Méthode interdite"},405);
   if(!env.DB)return response({error:"Binding D1 DB manquant dans Cloudflare Pages"},503);
   if(!env.GLOBAL_BT_KV)return response({error:"Binding KV GLOBAL_BT_KV manquant dans Cloudflare Pages"},503);
+  if(!env.SUPERADMIN_EMAIL)return response({error:"Secret SUPERADMIN_EMAIL manquant"},503);
+  if(!env.SUPERADMIN_INITIAL_PASSWORD)return response({error:"Secret SUPERADMIN_INITIAL_PASSWORD manquant"},503);
+  if(!env.SESSION_PEPPER)return response({error:"Secret SESSION_PEPPER manquant"},503);
+
   try{
     await ensureSchema(env);
-  }catch(e){
-    console.error(JSON.stringify({event:"schema_init_error",message:e?.message||String(e)}));
-    return response({error:"Impossible d'initialiser D1. Vérifiez le binding DB et les droits D1."},503);
-  }
-  const exists=await env.DB.prepare("SELECT id FROM users WHERE role='superadmin' AND status!='deleted' LIMIT 1").first();
-  if(exists)return response({ok:true,alreadyInitialized:true});
-  if(!env.SUPERADMIN_EMAIL||!env.SUPERADMIN_INITIAL_PASSWORD||!env.SESSION_PEPPER)return response({error:"Secrets Super Admin / session non configurés"},503);
-  const salt=randomToken(16),hash=await passwordHash(env.SUPERADMIN_INITIAL_PASSWORD,salt),id=crypto.randomUUID();
-  await env.DB.prepare(`INSERT INTO users(id,email,full_name,role,password_hash,password_salt,password_iterations,password_version,status)
-    VALUES(?,?,'Super Administrateur','superadmin',?,?,?,1,'active')`).bind(id,normEmail(env.SUPERADMIN_EMAIL),hash,salt,ITERATIONS).run();
-  await audit(env,{id,company_id:null},"SUPERADMIN_BOOTSTRAP","user",id,clientIp(req));
-  return response({ok:true,created:true});
-}
 
+    const configuredEmail=normEmail(env.SUPERADMIN_EMAIL);
+    const current=await env.DB.prepare(
+      "SELECT * FROM users WHERE role='superadmin' AND status!='deleted' LIMIT 1"
+    ).first();
+
+    // Ne jamais écraser un Super Admin existant à chaque démarrage.
+    if(current){
+      return response({ok:true,alreadyInitialized:true});
+    }
+
+    // Si l'adresse configurée existe déjà sous un autre rôle, la réparer
+    // au lieu de provoquer une erreur UNIQUE(email).
+    const sameEmail=await env.DB.prepare(
+      "SELECT * FROM users WHERE email=? LIMIT 1"
+    ).bind(configuredEmail).first();
+
+    const salt=randomToken(16);
+    const hash=await passwordHash(env.SUPERADMIN_INITIAL_PASSWORD,salt);
+
+    if(sameEmail){
+      const nextVersion=Number(sameEmail.password_version||1)+1;
+      await env.DB.prepare(`UPDATE users
+        SET company_id=NULL,
+            full_name='Super Administrateur',
+            role='superadmin',
+            password_hash=?,
+            password_salt=?,
+            password_iterations=?,
+            password_version=?,
+            must_change_password=0,
+            status='active',
+            updated_at=CURRENT_TIMESTAMP
+        WHERE id=? AND email=?`)
+        .bind(hash,salt,ITERATIONS,nextVersion,sameEmail.id,configuredEmail).run();
+
+      await audit(env,{id:sameEmail.id,company_id:null},"SUPERADMIN_REPAIRED","user",sameEmail.id,clientIp(req),{email:configuredEmail});
+      return response({ok:true,repaired:true});
+    }
+
+    const id=crypto.randomUUID();
+    await env.DB.prepare(`INSERT INTO users(
+      id,company_id,email,full_name,role,password_hash,password_salt,
+      password_iterations,password_version,must_change_password,status
+    ) VALUES(?,NULL,?,'Super Administrateur','superadmin',?,?,?,1,0,'active')`)
+      .bind(id,configuredEmail,hash,salt,ITERATIONS).run();
+
+    await audit(env,{id,company_id:null},"SUPERADMIN_BOOTSTRAP","user",id,clientIp(req),{email:configuredEmail});
+    return response({ok:true,created:true});
+  }catch(e){
+    console.error(JSON.stringify({
+      event:"superadmin_bootstrap_error",
+      message:e?.message||String(e),
+      stack:e?.stack||""
+    }));
+    return response({
+      error:"Initialisation Super Admin impossible",
+      detail:"Le schéma D1 est disponible mais le compte Super Admin n'a pas pu être créé ou réparé."
+    },500);
+  }
+}
 async function register(req,env){
   if(req.method!=="POST")return response({error:"Méthode interdite"},405);
   if(!env.DB)return response({error:"Binding D1 DB manquant"},503);

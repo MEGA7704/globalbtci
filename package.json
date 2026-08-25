@@ -1,6 +1,6 @@
 {
   "name": "global-bt-complet",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "private": true,
   "description": "GLOBAL BT - Gestion professionnelle de chantier sur Cloudflare Pages, D1 et KV",
   "scripts": {

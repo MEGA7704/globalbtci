@@ -127,3 +127,13 @@ La page de connexion propose maintenant deux onglets :
 - une session sécurisée immédiatement après inscription.
 
 Aucun hash ni sel n'est envoyé au navigateur. Le mot de passe est traité uniquement dans `_worker.js`.
+
+
+## V4 — Correction de la recréation Super Admin
+
+- Le bootstrap ne modifie pas un Super Admin existant.
+- Si aucun Super Admin n'existe mais que l'adresse `SUPERADMIN_EMAIL` est déjà présente sous un autre rôle,
+  le compte correspondant est réparé côté serveur au lieu d'échouer sur la contrainte UNIQUE(email).
+- Le mot de passe est recalculé depuis le secret Cloudflare et stocké uniquement sous forme de hash.
+- `password_version` est incrémenté lors d'une réparation afin d'invalider les anciennes sessions.
+- Les autres entreprises, projets et données D1 ne sont pas supprimés.

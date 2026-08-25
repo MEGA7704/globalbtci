@@ -35,7 +35,7 @@ async function init(){
   try{
     await post("/api/bootstrap",{});
   }catch(err){
-    $("#loginMessage").innerHTML=`Configuration Cloudflare incomplète : ${esc(err.message)}<br><small>Vérifiez D1, KV et les secrets du projet.</small>`;
+    $("#loginMessage").innerHTML=`Initialisation : ${esc(err.message)}<br><small>D1, KV et les secrets seront contrôlés côté serveur.</small>`;
   }
   try{state.session=await api("/api/session");await enter()}catch{}
 }
