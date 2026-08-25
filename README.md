@@ -95,3 +95,7 @@ Le résultat attendu après configuration :
 ```
 
 Au premier chargement, `POST /api/bootstrap` crée ou répare le Super Admin si aucun Super Admin n'existe encore.
+
+
+## V11 — Bootstrap stable
+Le Super Admin est créé/réparé avant la migration non bloquante des anciens identifiants. `/api/health` affiche `app_version`, `superadmin_ready` et `superadmin_credential_ready`.

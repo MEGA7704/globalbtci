@@ -24,7 +24,16 @@ $("#registerForm").onsubmit=async e=>{e.preventDefault();if($("#regPassword").va
 $("#forgotBtn").onclick=()=>modal(`<h2>Mot de passe oublié</h2><p>Administrateur : demande envoyée au Super Admin. Agent : demande envoyée à votre Administrateur.</p><form id="forgotForm"><label>E-mail<input name="email" type="email" required></label><button class="btn primary full">Envoyer</button></form><div id="forgotMsg" class="message"></div>`);
 document.addEventListener("submit",async e=>{if(e.target.id==="forgotForm"){e.preventDefault();try{const r=await post("/api/password-reset/request",fd(e.target));$("#forgotMsg").textContent=r.message}catch(x){$("#forgotMsg").textContent=x.message}}});
 
-async function init(){try{await post("/api/bootstrap",{})}catch(e){$("#authMessage").textContent="Configuration : "+e.message}try{S.session=await api("/api/session");await enter()}catch{}}
+async function init(){
+  try{await post("/api/bootstrap",{})}
+  catch(e){
+    try{
+      const h=await api("/api/health");
+      $("#authMessage").textContent=`Configuration : ${e.message} · Version ${h.app_version||"?"} · Super Admin ${h.superadmin_ready?"créé":"absent"} · Identifiant ${h.superadmin_credential_ready?"prêt":"absent"}`;
+    }catch{$("#authMessage").textContent="Configuration : "+e.message}
+  }
+  try{S.session=await api("/api/session");await enter()}catch{}
+}
 async function enter(){$("#authScreen").classList.add("hidden");$("#appShell").classList.remove("hidden");$("#userBadge").textContent=`${S.session.user.full_name} · ${S.session.user.role}`;$("#planBadge").textContent=S.session.company?`${S.session.company.plan.toUpperCase()} · ${df(S.session.company.plan_expires_at)}`:"SUPER ADMIN";$("#spaceLabel").textContent=S.session.user.role==="superadmin"?"SUPER ADMINISTRATION":"ESPACE ENTREPRISE";nav();await reload();go(S.session.user.role==="superadmin"?"super":"dashboard");if(S.session.user.must_change_password)changePassword()}
 async function reload(){S.data=await api("/api/load")}
 function nav(){const superA=S.session.user.role==="superadmin",admin=S.session.user.role==="admin";const n=superA?[["super","Tableau de bord"],["companies","Entreprises"],["members","Membres"],["subscriptions","Abonnements"],["resets","Mots de passe"],["audit","Journal"]]:[["dashboard","Tableau de bord"],["projects","Projets"],["expenses","Dépenses"],["labor","Main-d'œuvre"],["trades","Métiers"],["suppliers","Fournisseurs"],["reports","Rapports"],...(admin?[["users","Utilisateurs"]]:[]),["settings","Paramètres"]];$("#mainNav").innerHTML=n.map(([i,l])=>`<button data-nav="${i}">${l}</button>`).join("")+`<button id="logout" class="logout">Déconnexion</button>`;$("#mainNav").classList.remove("hidden");document.querySelectorAll("[data-nav]").forEach(b=>b.onclick=()=>go(b.dataset.nav));$("#logout").onclick=async()=>{try{await post("/api/logout",{})}catch{}location.reload()}}
