@@ -1,17 +1,14 @@
 {
-  "name": "global-bt-complet",
-  "version": "7.0.0",
+  "name": "global-bt-cloudflare",
+  "version": "10.0.0",
   "private": true,
-  "description": "GLOBAL BT - Gestion professionnelle de chantier sur Cloudflare Pages, D1 et KV",
+  "description": "GLOBAL BT - Gestion de chantier Cloudflare Pages + D1 + KV",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "dev": "npm run build && wrangler pages dev dist",
     "check": "node --check public/_worker.js && node --check public/app.js",
+    "dev": "npm run build && wrangler pages dev dist",
     "db:migrate:local": "wrangler d1 migrations apply global_bt_d1 --local",
     "db:migrate:remote": "wrangler d1 migrations apply global_bt_d1 --remote"
-  },
-  "dependencies": {
-    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

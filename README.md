@@ -1,42 +1,49 @@
-# GLOBAL BT — Version complète V2 corrigée Cloudflare Pages / GitHub / D1 / KV
+# GLOBAL BT — Cloudflare Pages + GitHub + KV + D1
 
-## Ressources imposées
+Version consolidée, conçue pour éviter de publier les secrets dans GitHub.
 
-- KV : `GLOBAL_BT_KV`
-- KV namespace ID : `fa67ed41b2d14bf69fa7b0c0ee6bca8b`
-- D1 : `global_bt_d1`
-- D1 database ID : `6cff1413-f730-42e1-abcb-e64e34c6e06f`
-- Binding D1 dans le Worker : `DB`
+## Cloudflare existant
 
-## Fonctionnalités incluses
+- KV binding : `GLOBAL_BT_KV`
+- KV namespace : `fa67ed41b2d14bf69fa7b0c0ee6bca8b`
+- D1 binding : `DB`
+- D1 database : `global_bt_d1`
+- D1 ID : `6cff1413-f730-42e1-abcb-e64e34c6e06f`
 
-- Authentification serveur `POST /api/login`
-- PBKDF2-SHA-256 exclusivement dans `public/_worker.js`
-- cookies HttpOnly + Secure + SameSite=Lax
-- sessions KV
-- CSRF obligatoire pour les écritures
-- rate limit IP + compte pendant 15 minutes
-- invalidation des sessions par `password_version`
-- multi-entreprises strict par `company_id`
-- Super Admin
-- création / activation / désactivation / suppression logique des entreprises et membres
-- Free 21 jours / Business 365 jours
-- popup commercial Free à l'ouverture et toutes les 15 minutes
-- demandes de mot de passe oublié
-- Admin réinitialisé par Super Admin
-- Agent réinitialisé par son Administrateur
-- journal D1 des actions sensibles
-- projets, corps de métier, fournisseurs, dépenses, main-d'œuvre
-- tableaux de bord et rapports
-- import réel de `bt.xlsx` via SheetJS/XLSX
-- impression / export PDF via impression navigateur
-- interface responsive avec menu horizontal sticky
+## Sécurité incluse
 
-## Secrets — NE PAS METTRE DANS GITHUB
+- `POST /api/login` réel côté serveur.
+- Mot de passe vérifié uniquement dans `public/_worker.js`.
+- Les vrais hash/sel sont stockés dans `user_credentials`, jamais retournés par `/api/load`.
+- Migration des anciens hash/sel de `users` vers `user_credentials`; les anciennes colonnes sont remplacées par `MIGRATED` lorsqu'elles existent.
+- `/api/load` et `/api/save` exigent une session valide.
+- Cookie `HttpOnly; Secure; SameSite=Lax`.
+- CSRF obligatoire pour toutes les écritures authentifiées.
+- rôles `superadmin`, `admin`, `agent` vérifiés côté serveur.
+- isolation par `company_id` provenant uniquement de la session.
+- plans/statuts d'entreprise modifiables uniquement par Super Admin.
+- limitation 15 minutes par IP ET e-mail après 5 échecs.
+- `password_version` invalide automatiquement les anciennes sessions après changement/réinitialisation/désactivation.
+- journal des actions sensibles dans `audit_logs`.
+- suppression logique des comptes et entreprises.
+- demandes de mot de passe oublié.
+- Administrateur réinitialisé par Super Admin.
+- Agent réinitialisé par l'Administrateur de son entreprise.
 
-Le dépôt ne contient pas le mot de passe Super Admin.
+## Plans
 
-Après création du projet Pages, configurer :
+- Free : accès complet 21 jours.
+- Business : accès complet 365 jours.
+- Le popup Free s'affiche à l'ouverture de chaque section et au moins toutes les 15 minutes.
+- Paiement Business :
+  `https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=20600`
+- Ouvrir le lien ne change pas automatiquement le plan. Le Super Admin active Business.
+
+## Super Admin — secret hors GitHub
+
+Le dépôt NE CONTIENT PAS le mot de passe initial.
+
+Configurer dans Cloudflare Pages les secrets suivants :
 
 ```bash
 npx wrangler pages secret put SUPERADMIN_EMAIL --project-name global-bt
@@ -44,135 +51,47 @@ npx wrangler pages secret put SUPERADMIN_INITIAL_PASSWORD --project-name global-
 npx wrangler pages secret put SESSION_PEPPER --project-name global-bt
 ```
 
-Saisir les valeurs directement dans le terminal au prompt sécurisé.
+Pour `SUPERADMIN_EMAIL`, utiliser l'adresse Super Admin prévue.
+Pour `SUPERADMIN_INITIAL_PASSWORD`, saisir le mot de passe initial directement au prompt Wrangler.
+Pour `SESSION_PEPPER`, saisir une longue valeur aléatoire (32 caractères ou plus).
 
-## Installer et tester
+## Build Cloudflare Pages exact
+
+- Framework preset : `None`
+- Production branch : `main`
+- Root directory : `/`
+- Build command / Commande de version : `npm run build`
+- Build output directory / Répertoire de sortie : `dist`
+
+## Déploiement
 
 ```bash
 npm install
 npm run check
+npx wrangler d1 migrations apply global_bt_d1 --remote
 npm run build
 ```
 
-## Appliquer D1
+Puis pousser sur GitHub.
 
-```bash
-npx wrangler d1 migrations apply global_bt_d1 --remote
+Après ajout des secrets, redéployer le projet Pages.
+
+## Diagnostic
+
+`GET /api/health`
+
+Le résultat attendu après configuration :
+
+```json
+{
+  "ok": true,
+  "d1_bound": true,
+  "kv_bound": true,
+  "superadmin_email_configured": true,
+  "superadmin_password_configured": true,
+  "session_pepper_configured": true,
+  "schema_ready": true
+}
 ```
 
-## Cloudflare Pages — Build exact
-
-- Framework preset : **None**
-- Production branch : **main**
-- Root directory : **/**
-- Build command : **npm run build**
-- Build output directory : **dist**
-
-## Premier démarrage
-
-1. Appliquer les migrations.
-2. Configurer les trois secrets.
-3. Redéployer Pages.
-4. Ouvrir le site. Le navigateur appelle `/api/bootstrap`.
-5. Le bootstrap crée le Super Admin uniquement si aucun Super Admin n'existe déjà.
-6. Le mot de passe n'est jamais écrit en clair dans D1, GitHub, HTML ou JavaScript client.
-7. Après connexion avec un mot de passe temporaire d'un membre, GLOBAL BT peut exiger son remplacement.
-
-## Développement local
-
-Créer un fichier `.dev.vars` non versionné avec :
-
-```text
-SUPERADMIN_EMAIL=...
-SUPERADMIN_INITIAL_PASSWORD=...
-SESSION_PEPPER=...
-```
-
-Puis :
-
-```bash
-npm install
-npm run db:migrate:local
-npm run dev
-```
-
-## Important
-
-Le paiement Wave ouvre seulement la page de paiement. Il n'active pas automatiquement Business. Le changement de plan reste une action Super Admin tant qu'un webhook de paiement vérifié n'est pas ajouté.
-
-
-## Correction V2 — Erreur serveur au premier déploiement
-
-La route `POST /api/bootstrap` vérifie maintenant les bindings D1/KV et crée le schéma minimal
-avec `CREATE TABLE IF NOT EXISTS` si la migration n'a pas encore été appliquée.
-Les migrations SQL restent la méthode normale pour les évolutions ultérieures.
-
-Diagnostic public non sensible :
-- `GET /api/health`
-
-Cette route indique uniquement si D1, KV, les secrets et la table `users` sont configurés.
-Elle n'expose aucune valeur secrète.
-
-
-## V3 — Inscription utilisateur
-
-La page de connexion propose maintenant deux onglets :
-- Se connecter
-- S'inscrire
-
-`POST /api/register` crée automatiquement :
-- une entreprise,
-- son premier Administrateur,
-- un Plan Free de 21 jours,
-- une session sécurisée immédiatement après inscription.
-
-Aucun hash ni sel n'est envoyé au navigateur. Le mot de passe est traité uniquement dans `_worker.js`.
-
-
-## V4 — Correction de la recréation Super Admin
-
-- Le bootstrap ne modifie pas un Super Admin existant.
-- Si aucun Super Admin n'existe mais que l'adresse `SUPERADMIN_EMAIL` est déjà présente sous un autre rôle,
-  le compte correspondant est réparé côté serveur au lieu d'échouer sur la contrainte UNIQUE(email).
-- Le mot de passe est recalculé depuis le secret Cloudflare et stocké uniquement sous forme de hash.
-- `password_version` est incrémenté lors d'une réparation afin d'invalider les anciennes sessions.
-- Les autres entreprises, projets et données D1 ne sont pas supprimés.
-
-
-## V5 — Bootstrap legacy + déblocage Super Admin
-
-Corrections :
-- migration automatique des colonnes absentes dans les anciennes tables D1 ;
-- réparation/création Super Admin indépendante du journal d'audit ;
-- suppression automatique du rate-limit KV pour l'adresse Super Admin et l'IP du bootstrap après réussite ;
-- `/api/bootstrap-status` fournit un diagnostic non sensible du schéma et de l'existence du compte ;
-- codes d'erreur bootstrap lisibles sans exposer de secret.
-
-Après déploiement :
-1. ouvrir `/api/health`;
-2. ouvrir `/api/bootstrap-status`;
-3. ouvrir la page d'accueil pour déclencher `POST /api/bootstrap`;
-4. si nécessaire, recharger `/api/bootstrap-status`.
-
-
-## V6 — Correction Base64 / hash du Super Admin
-
-Cause corrigée :
-`randomToken()` produit des chaînes Base64 URL-safe (`-`, `_`) sans padding `=`.
-L'ancien `fromB64()` utilisait directement `atob()`, qui attend du Base64 classique.
-
-La V6 :
-- reconvertit `-` en `+` et `_` en `/`;
-- restaure automatiquement le padding `=`;
-- permet à PBKDF2 de décoder correctement le sel;
-- ajoute les diagnostics `BASE64_DECODE_ERROR` et `PASSWORD_HASH_ERROR`.
-
-
-## V7 — Bootstrap compatible avec les anciens schémas D1
-
-- lecture de `PRAGMA table_info(users)`;
-- remplissage explicite de `created_at`, `updated_at`, `phone`, `created_by` et autres colonnes connues;
-- détection des colonnes historiques `NOT NULL` sans valeur par défaut;
-- création d'une entreprise système uniquement si l'ancien schéma impose `users.company_id NOT NULL`;
-- diagnostic `/api/bootstrap-status` enrichi avec type, NOT NULL, défaut et clé primaire de chaque colonne;
-- aucune valeur de mot de passe/hash/secret n'est exposée.
+Au premier chargement, `POST /api/bootstrap` crée ou répare le Super Admin si aucun Super Admin n'existe encore.
