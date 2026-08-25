@@ -326,3 +326,17 @@ Refonte visuelle du popup projet :
 - en-tête, bannière KPI, onglets et pied restent visibles ;
 - affichage encore plus compact sur écrans larges mais peu hauts ;
 - tablette et mobile conservent un comportement responsive avec défilement adapté.
+
+
+## V38 — Bibliothèque générale métiers + tableaux projet
+
+- Le menu Métiers devient une bibliothèque générale indépendante des projets.
+- Le formulaire général n'affiche plus Projet ni Description.
+- Un métier ne peut être affecté à un projet que s'il existe dans la bibliothèque générale.
+- Suppression globale d'un métier/fournisseur refusée s'il intervient dans un projet non clôturé.
+- Retrait depuis l'espace d'un projet autorisé, projet clôturé ou non.
+- Tableau Métiers projet : Corps principal, Activité, Description activité, Main-d'œuvre, Actions.
+- Tableau Matériaux : Date, Corps principal, Activité, Désignation, Fournisseur, Quantité, Prix unitaire, Prix total, Actions.
+- Modification et suppression des matériaux.
+- Recherche Matériaux par métier, activité, date ou fournisseur.
+- Impression A4 professionnelle des listes de chaque section.
