@@ -1,0 +1,32 @@
+GLOBAL BT - CONFIGURATION EXACTE CLOUDFLARE PAGES
+
+1) GitHub
+   - Créer un dépôt.
+   - Envoyer tous les fichiers du dossier GLOBAL_BT_COMPLET_V1.
+   - Branche de production : main.
+
+2) Cloudflare Pages
+   Framework preset : None
+   Production branch : main
+   Root directory : /
+   Build command : npm run build
+   Build output directory : dist
+
+3) Bindings
+   Le fichier wrangler.jsonc contient :
+   KV binding GLOBAL_BT_KV -> fa67ed41b2d14bf69fa7b0c0ee6bca8b
+   D1 binding DB -> global_bt_d1 -> 6cff1413-f730-42e1-abcb-e64e34c6e06f
+
+4) Migration
+   npm install
+   npx wrangler d1 migrations apply global_bt_d1 --remote
+
+5) Secrets (NE PAS LES COMMITTER)
+   npx wrangler pages secret put SUPERADMIN_EMAIL --project-name global-bt
+   npx wrangler pages secret put SUPERADMIN_INITIAL_PASSWORD --project-name global-bt
+   npx wrangler pages secret put SESSION_PEPPER --project-name global-bt
+
+6) Redéployer le projet après ajout des secrets/bindings si nécessaire.
+
+7) Premier accès
+   La route POST /api/bootstrap initialise le Super Admin si aucun compte Super Admin n'existe.

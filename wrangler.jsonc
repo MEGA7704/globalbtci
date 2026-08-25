@@ -1,0 +1,24 @@
+{
+  "name": "global-bt",
+  "compatibility_date": "2026-08-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "pages_build_output_dir": "./dist",
+  "kv_namespaces": [
+    {
+      "binding": "GLOBAL_BT_KV",
+      "id": "fa67ed41b2d14bf69fa7b0c0ee6bca8b"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "global_bt_d1",
+      "database_id": "6cff1413-f730-42e1-abcb-e64e34c6e06f",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "APP_NAME": "GLOBAL BT",
+    "BUSINESS_PAYMENT_URL": "https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=20600"
+  }
+}

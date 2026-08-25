@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#063b37">
+  <title>GLOBAL BT</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">GBT</span>
+    <div><strong>GLOBAL BT</strong><small>Gestion professionnelle de chantier</small></div>
+  </div>
+  <nav id="mainNav" class="nav hidden"></nav>
+</header>
+
+<main>
+  <section id="loginScreen" class="login-screen">
+    <div class="login-art">
+      <span class="eyebrow">GESTION BTP</span>
+      <h1>Pilotez vos chantiers avec précision.</h1>
+      <p>Projets, matériaux, main-d'œuvre, fournisseurs, budgets et rapports dans un espace sécurisé.</p>
+      <div class="feature-grid">
+        <span>Suivi budgétaire</span><span>Multi-projets</span><span>Rapports</span><span>Sécurité D1 + KV</span>
+      </div>
+    </div>
+    <div class="login-card">
+      <span class="eyebrow gold">GLOBAL BT</span>
+      <h2>Connexion</h2>
+      <p>Accédez à votre espace de gestion.</p>
+      <form id="loginForm" autocomplete="on">
+        <label>E-mail<input id="loginEmail" type="email" autocomplete="username" required></label>
+        <label>Mot de passe
+          <div class="password-wrap"><input id="loginPassword" type="password" autocomplete="current-password" required><button type="button" id="togglePassword" class="eye">Voir</button></div>
+        </label>
+        <button class="btn primary full" type="submit">Se connecter</button>
+      </form>
+      <button id="forgotPassword" class="link-btn">Mot de passe oublié ?</button>
+      <div id="loginMessage" class="message"></div>
+    </div>
+  </section>
+
+  <section id="appShell" class="app-shell hidden">
+    <div class="page-head">
+      <div><span id="roleEyebrow" class="eyebrow">ESPACE</span><h1 id="pageTitle">Tableau de bord</h1><p id="pageSubtitle"></p></div>
+      <div class="session-meta"><span id="planBadge" class="badge"></span><span id="userBadge" class="user-badge"></span></div>
+    </div>
+    <div id="content"></div>
+  </section>
+</main>
+
+<div id="toast" class="toast hidden"></div>
+<div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-card">
+    <button id="closeModal" class="modal-close" aria-label="Fermer">×</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<script src="/xlsx.full.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
