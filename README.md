@@ -304,3 +304,15 @@ en début/fin de nom.
 
 ## V27 — Projets centralisés
 Menu membre simplifié et opérations métiers/dépenses/fournisseurs/main-d’œuvre regroupées dans chaque projet. Modification, verrouillage/déverrouillage et suppression sont protégés par le mot de passe Administrateur côté serveur.
+
+
+## V29 — Popup projet premium
+
+Refonte visuelle du popup projet :
+- en-tête ESPACE PROJET + fermeture circulaire ;
+- bannière projet vert pétrole ;
+- cartes KPI Budget / Dépenses / Main-d'œuvre ;
+- onglets Métiers / Dépenses / Fournisseurs ;
+- tableau professionnel avec actions Voir / Modifier / Supprimer pour les métiers ;
+- pied de popup avec compteur, date de mise à jour, Imprimer et Fermer ;
+- impression adaptée au format A4.
