@@ -8,7 +8,35 @@ function df(v){if(!v)return"";const d=new Date(v.length===10?v+"T00:00:00":v);re
 function toast(m,bad=false){const t=$("#toast");t.textContent=m;t.style.background=bad?"#8d3037":"#16433e";t.classList.remove("hidden");setTimeout(()=>t.classList.add("hidden"),3000)}
 function modal(h){$("#modalBody").innerHTML=h;$("#modal").classList.remove("hidden")}function closeModal(){$("#modal").classList.add("hidden")}
 $("#modalClose").onclick=closeModal;$("#modal").onclick=e=>{if(e.target===$("#modal"))closeModal()};
-async function api(path,opt={}){const headers={...(opt.body?{"content-type":"application/json"}:{}),...(opt.headers||{})};if(S.session?.csrf&&opt.method&&opt.method!=="GET")headers["X-CSRF-Token"]=S.session.csrf;const r=await fetch(path,{credentials:"same-origin",...opt,headers}),b=await r.json().catch(()=>({}));if(!r.ok){const extra=[b.entity,b.action,b.code].filter(Boolean).join(" · ");const e=new Error((b.error||"Erreur serveur")+(extra?" · "+extra:""));e.stage=b.stage||"";e.code=b.code||"";throw e;}return b}
+async function api(path,opt={},retry=true){
+  const headers={...(opt.body?{"content-type":"application/json"}:{}),...(opt.headers||{})};
+  if(S.session?.csrf&&opt.method&&opt.method!=="GET")headers["X-CSRF-Token"]=S.session.csrf;
+
+  let r=await fetch(path,{credentials:"same-origin",...opt,headers});
+  let b=await r.json().catch(()=>({}));
+
+  if(r.status===403 && String(b.error||"").toLowerCase().includes("csrf") && retry){
+    try{
+      const cr=await fetch("/api/csrf",{credentials:"same-origin"});
+      const cb=await cr.json().catch(()=>({}));
+      if(cr.ok&&cb.csrf){
+        S.session.csrf=cb.csrf;
+        const headers2={...headers,"X-CSRF-Token":cb.csrf};
+        r=await fetch(path,{credentials:"same-origin",...opt,headers:headers2});
+        b=await r.json().catch(()=>({}));
+      }
+    }catch{}
+  }
+
+  if(!r.ok){
+    const extra=[b.entity,b.action,b.code].filter(Boolean).join(" · ");
+    const e=new Error((b.error||"Erreur serveur")+(extra?" · "+extra:""));
+    e.stage=b.stage||"";
+    e.code=b.code||"";
+    throw e;
+  }
+  return b
+}
 const post=(p,o)=>api(p,{method:"POST",body:JSON.stringify(o)});
 function fd(f){return Object.fromEntries(new FormData(f).entries())}
 function opts(a,sel=""){return `<option value="">— Sélectionner —</option>`+(a||[]).map(x=>`<option value="${esc(x.id)}" ${x.id===sel?"selected":""}>${esc(x.name||x.full_name)}</option>`).join("")}

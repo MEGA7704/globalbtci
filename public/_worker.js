@@ -221,6 +221,41 @@ async function migrateLegacyCredentials(env){
     await env.DB.prepare("UPDATE users SET password_hash='MIGRATED',password_salt='MIGRATED' WHERE id=?").bind(r.id).run();
   }
 }
+
+async function insertLaborCompatible(env,row){
+  const info=await tableInfo(env,"labor_expenses");
+  const names=[],vals=[],qs=[],supplied=new Set();
+  const has=n=>info.some(x=>x.name===n);
+  const add=(n,v)=>{if(has(n)){names.push(n);vals.push(v);qs.push("?");supplied.add(n)}};
+
+  add("id",row.id);
+  add("company_id",row.company_id);
+  add("project_id",row.project_id);
+  add("trade_id",row.trade_id||null);
+  add("expense_date",row.expense_date);
+  add("worker_name",row.worker_name||"");
+  add("description",row.description||"Main-d'œuvre");
+  add("work_description",row.description||"Main-d'œuvre");
+  add("amount",row.amount||0);
+  add("payment_method",row.payment_method||"");
+  add("reference",row.reference||"");
+  add("payment_reference",row.reference||"");
+  add("notes",row.notes||"");
+  add("created_by",row.created_by);
+  add("created_at",now());
+  add("updated_at",now());
+
+  const bad=info.filter(x =>
+    Number(x.notnull)===1 &&
+    x.dflt_value==null &&
+    Number(x.pk)!==1 &&
+    !supplied.has(x.name)
+  );
+  if(bad.length)throw new Error("LABOR_REQUIRED_COLUMNS:"+bad.map(x=>x.name).join(","));
+
+  await env.DB.prepare(`INSERT INTO labor_expenses(${names.join(",")}) VALUES(${qs.join(",")})`).bind(...vals).run();
+}
+
 async function insertCompanyProfile(env,c){
   const info=await tableInfo(env,"companies"),names=[],vals=[],qs=[],supplied=new Set();
   const has=n=>info.some(x=>x.name===n);
@@ -422,11 +457,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"20.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"21.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"20.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"21.0.0"},500);
   }
 }
 async function login(req,env){
@@ -672,7 +707,8 @@ async function save(req,env){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"save_error",entity,action,message:msg,stack:e?.stack||""}));
     let code="SAVE_ERROR";
-    if(msg.includes("no such column"))code="MISSING_COLUMN";
+    if(msg.includes("LABOR_REQUIRED_COLUMNS:"))code=msg;
+    else if(msg.includes("no such column"))code="MISSING_COLUMN";
     else if(msg.includes("NOT NULL constraint"))code="NOT_NULL_CONSTRAINT";
     else if(msg.includes("UNIQUE constraint"))code="UNIQUE_CONSTRAINT";
     else if(msg.includes("CHECK constraint"))code="CHECK_CONSTRAINT";
@@ -702,7 +738,27 @@ async function saveCompany(req,env,s,entity,action,r){
     if(action==="delete"&&actor.role==="admin"){await env.DB.prepare("DELETE FROM expenses WHERE id=? AND company_id=?").bind(r.id,c).run();await audit(env,actor,"DELETE_EXPENSE","expense",r.id,ip(req));return json({ok:true})}
   }
   if(entity==="labor"){
-    if(action==="create"){const p=await env.DB.prepare("SELECT id FROM projects WHERE id=? AND company_id=?").bind(r.project_id,c).first();if(!p)return json({error:"Projet invalide"},400);const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO labor_expenses(id,company_id,project_id,trade_id,expense_date,worker_name,description,amount,payment_method,reference,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,c,r.project_id,r.trade_id||null,today(r.expense_date),text(r.worker_name,160),text(r.description,500),money(r.amount),text(r.payment_method,80),text(r.reference,120),text(r.notes,800),actor.id).run();await audit(env,actor,"CREATE_LABOR","labor",id,ip(req),{amount:money(r.amount)});return json({ok:true,id})}
+    if(action==="create"){
+      const p=await env.DB.prepare("SELECT id FROM projects WHERE id=? AND company_id=?").bind(r.project_id,c).first();
+      if(!p)return json({error:"Projet invalide"},400);
+      const id=crypto.randomUUID();
+      await insertLaborCompatible(env,{
+        id,
+        company_id:c,
+        project_id:r.project_id,
+        trade_id:r.trade_id||null,
+        expense_date:today(r.expense_date),
+        worker_name:text(r.worker_name,160),
+        description:text(r.description,500),
+        amount:money(r.amount),
+        payment_method:text(r.payment_method,80),
+        reference:text(r.reference,120),
+        notes:text(r.notes,800),
+        created_by:actor.id
+      });
+      await audit(env,actor,"CREATE_LABOR","labor",id,ip(req),{amount:money(r.amount)});
+      return json({ok:true,id})
+    }
     if(action==="delete"&&actor.role==="admin"){await env.DB.prepare("DELETE FROM labor_expenses WHERE id=? AND company_id=?").bind(r.id,c).run();return json({ok:true})}
   }
   if(entity==="user"&&actor.role==="admin"){
@@ -755,7 +811,7 @@ async function cryptoHealth(req,env){
     const test=await makeMemberCredential("GlobalBT-Test-2026!");
     return json({
       ok:true,
-      app_version:"20.0.0",
+      app_version:"21.0.0",
       algorithm:"PBKDF2-SHA-256",
       iterations:test.password_iterations,
       elapsed_ms:Date.now()-started
@@ -763,11 +819,21 @@ async function cryptoHealth(req,env){
   }catch(e){
     return json({
       ok:false,
-      app_version:"20.0.0",
+      app_version:"21.0.0",
       code:e?.message||"PASSWORD_HASH_FAILED",
       elapsed_ms:Date.now()-started
     },500);
   }
+}
+
+
+async function refreshCsrf(req,env){
+  const s=await getSession(req,env);
+  if(!s)return json({error:"Session invalide"},401);
+  const next=hex(bytes(24));
+  s.s.csrf=next;
+  await env.GLOBAL_BT_KV.put(s.key,JSON.stringify(s.s),{expirationTtl:SESSION_TTL});
+  return json({ok:true,csrf:next});
 }
 
 async function health(req,env){
@@ -787,7 +853,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"20.0.0",
+    app_version:"21.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,
@@ -797,7 +863,7 @@ async function health(req,env){
     superadmin_ready:superadmin,
     superadmin_credential_ready:superadmin&&secretReady,
     superadmin_auth:"cloudflare_secret",
-    member_auth_store:"GLOBAL_BT_KV / cred:v1:<user_id>",schema_repair_version:"20"
+    member_auth_store:"GLOBAL_BT_KV / cred:v1:<user_id>",schema_repair_version:"21"
   });
 }
 
@@ -809,6 +875,7 @@ async function route(req,env){
   if(p==="/api/login")return login(req,env);
   if(p==="/api/register")return register(req,env);
   if(p==="/api/session")return session(req,env);
+  if(p==="/api/csrf")return refreshCsrf(req,env);
   if(p==="/api/logout")return logout(req,env);
   if(p==="/api/load")return load(req,env);
   if(p==="/api/save")return save(req,env);

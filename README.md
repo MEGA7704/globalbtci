@@ -230,3 +230,12 @@ Correction :
 
 Après déploiement, ouvrir `/api/crypto-health`.
 Le résultat attendu est `ok: true`.
+
+
+## V21 — Main-d'œuvre + CSRF
+
+- insertion `labor_expenses` adaptée au schéma D1 existant ;
+- compatibilité avec `description` / `work_description` et `reference` / `payment_reference` ;
+- diagnostic explicite `LABOR_REQUIRED_COLUMNS:<colonne>` si une vieille colonne obligatoire subsiste ;
+- nouvelle route `/api/csrf` ;
+- renouvellement automatique du jeton CSRF puis nouvelle tentative unique de l'écriture.
