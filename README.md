@@ -8,7 +8,7 @@
 - D1 database ID : `6cff1413-f730-42e1-abcb-e64e34c6e06f`
 - Binding D1 dans le Worker : `DB`
 
-## Fonctionnalités incluses
+## Fonctionnalités incluses  
 
 - Authentification serveur `POST /api/login`
 - PBKDF2-SHA-256 exclusivement dans `public/_worker.js`
