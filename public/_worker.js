@@ -112,6 +112,7 @@ async function ensureSchema(env){
 `CREATE TABLE IF NOT EXISTS expenses(id TEXT PRIMARY KEY,company_id TEXT NOT NULL,project_id TEXT NOT NULL,trade_id TEXT,supplier_id TEXT,expense_date TEXT NOT NULL,description TEXT NOT NULL,quantity REAL NOT NULL DEFAULT 0,unit TEXT,unit_price INTEGER NOT NULL DEFAULT 0,total_price INTEGER NOT NULL DEFAULT 0,reference TEXT,notes TEXT,created_by TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 `CREATE TABLE IF NOT EXISTS labor_expenses(id TEXT PRIMARY KEY,company_id TEXT NOT NULL,project_id TEXT NOT NULL,trade_id TEXT,expense_date TEXT NOT NULL,worker_name TEXT,description TEXT NOT NULL,amount INTEGER NOT NULL DEFAULT 0,payment_method TEXT,reference TEXT,notes TEXT,created_by TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 `CREATE TABLE IF NOT EXISTS password_reset_requests(id TEXT PRIMARY KEY,company_id TEXT,user_id TEXT,email TEXT NOT NULL,target_role TEXT,status TEXT NOT NULL DEFAULT 'pending',requested_ip TEXT,handled_by TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,handled_at TEXT)`,
+`CREATE TABLE IF NOT EXISTS subscription_activation_requests(id TEXT PRIMARY KEY,company_id TEXT NOT NULL,requested_by TEXT NOT NULL,requested_plan TEXT NOT NULL,payment_phone TEXT NOT NULL,transaction_id TEXT NOT NULL UNIQUE,status TEXT NOT NULL DEFAULT 'pending',handled_by TEXT,support_note TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,handled_at TEXT)`,
 `CREATE TABLE IF NOT EXISTS audit_logs(id TEXT PRIMARY KEY,company_id TEXT,actor_user_id TEXT,action TEXT NOT NULL,target_type TEXT,target_id TEXT,ip TEXT,metadata_json TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 `CREATE TABLE IF NOT EXISTS app_meta(key TEXT PRIMARY KEY,value TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`
   ];
@@ -200,6 +201,18 @@ async function ensureSchema(env){
   await ensureColumn(env,"password_reset_requests","created_at","TEXT");
   await ensureColumn(env,"password_reset_requests","handled_at","TEXT");
 
+  // V40 : demandes d'activation d'abonnement envoyées au support / Super Admin.
+  await ensureColumn(env,"subscription_activation_requests","company_id","TEXT");
+  await ensureColumn(env,"subscription_activation_requests","requested_by","TEXT");
+  await ensureColumn(env,"subscription_activation_requests","requested_plan","TEXT");
+  await ensureColumn(env,"subscription_activation_requests","payment_phone","TEXT");
+  await ensureColumn(env,"subscription_activation_requests","transaction_id","TEXT");
+  await ensureColumn(env,"subscription_activation_requests","status","TEXT NOT NULL DEFAULT 'pending'");
+  await ensureColumn(env,"subscription_activation_requests","handled_by","TEXT");
+  await ensureColumn(env,"subscription_activation_requests","support_note","TEXT");
+  await ensureColumn(env,"subscription_activation_requests","created_at","TEXT");
+  await ensureColumn(env,"subscription_activation_requests","handled_at","TEXT");
+
   await ensureColumn(env,"audit_logs","company_id","TEXT");
   await ensureColumn(env,"audit_logs","actor_user_id","TEXT");
   await ensureColumn(env,"audit_logs","action","TEXT");
@@ -226,7 +239,7 @@ async function ensureSchema(env){
   }
 
 }
-const SCHEMA_READY_KEY="schema:global-bt:v39";
+const SCHEMA_READY_KEY="schema:global-bt:v40";
 async function markSchemaReady(env){await env.GLOBAL_BT_KV.put(SCHEMA_READY_KEY,"1")}
 async function requireSchemaReady(env){
   if((await env.GLOBAL_BT_KV.get(SCHEMA_READY_KEY))==="1")return true;
@@ -235,7 +248,7 @@ async function requireSchemaReady(env){
     await markSchemaReady(env);
     return true;
   }catch(e){
-    console.error(JSON.stringify({event:"schema_v39_prepare_error",message:e?.message||String(e)}));
+    console.error(JSON.stringify({event:"schema_v40_prepare_error",message:e?.message||String(e)}));
     return false;
   }
 }
@@ -437,7 +450,7 @@ async function getSession(req,env){
   const t=cookie(req,"gbt_session");if(!t)return null;const key=await sessionKey(env,t),s=await env.GLOBAL_BT_KV.get(key,"json");if(!s)return null;
   const u=await env.DB.prepare("SELECT id,company_id,email,full_name,phone,role,status,password_version,must_change_password FROM users WHERE id=?").bind(s.userId).first();
   if(!u||u.status!=="active"||Number(u.password_version)!==Number(s.passwordVersion)){await env.GLOBAL_BT_KV.delete(key);return null}
-  let c=null;if(u.company_id){c=await env.DB.prepare("SELECT id,name,city,plan,plan_started_at,plan_expires_at,status FROM companies WHERE id=?").bind(u.company_id).first();if(!c||c.status!=="active")return null}
+  let c=null;if(u.company_id){c=await env.DB.prepare("SELECT id,name,code,phone,email,city,address,plan,plan_started_at,plan_expires_at,status FROM companies WHERE id=?").bind(u.company_id).first();if(!c||c.status!=="active")return null}
   return {t,key,s,u,c};
 }
 function csrf(req,s){return !!s?.s?.csrf&&req.headers.get("X-CSRF-Token")===s.s.csrf}
@@ -487,11 +500,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"39.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"40.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"39.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"40.0.0"},500);
   }
 }
 async function login(req,env){
@@ -547,7 +560,7 @@ async function login(req,env){
 
   let c=null;
   if(u.company_id){
-    c=await env.DB.prepare("SELECT id,name,city,plan,plan_started_at,plan_expires_at,status FROM companies WHERE id=?").bind(u.company_id).first();
+    c=await env.DB.prepare("SELECT id,name,code,phone,email,city,address,plan,plan_started_at,plan_expires_at,status FROM companies WHERE id=?").bind(u.company_id).first();
     if(!c||c.status!=="active")return json({error:"Entreprise désactivée"},403);
     if(Date.parse(c.plan_expires_at)<=Date.now())return json({error:"Abonnement expiré"},403);
   }
@@ -604,6 +617,8 @@ async function register(req,env){
     await insertCompanyProfile(env,{
       id:cid,
       name:companyName,
+      phone:text(b.phone,50),
+      email:em,
       city:text(b.city,120),
       plan:"free",
       plan_started_at:startDate,
@@ -641,7 +656,10 @@ async function register(req,env){
       company:{
         id:cid,
         name:companyName,
+        phone:text(b.phone,50),
+        email:em,
         city:text(b.city,120),
+        address:"",
         plan:"free",
         plan_started_at:startDate,
         plan_expires_at:endDate,
@@ -692,12 +710,17 @@ async function load(req,env){
   const a=await auth(req,env);if(a.error)return a.error;const s=a.s;
   if(!await requireSchemaReady(env))return json({error:"Base non initialisée",code:"SCHEMA_NOT_READY"},503);
   if(s.u.role==="superadmin"){
-    const [companies,users,resets,logs]=await Promise.all([
+    const [companies,users,resets,subscriptionRequests,logs]=await Promise.all([
       env.DB.prepare("SELECT id,name,city,plan,plan_started_at,plan_expires_at,status,created_at FROM companies WHERE status!='deleted' ORDER BY created_at DESC").all(),
       env.DB.prepare(`SELECT u.id,u.company_id,u.email,u.full_name,u.phone,u.role,u.status,u.created_at,c.name company_name
         FROM users u LEFT JOIN companies c ON c.id=u.company_id
         WHERE u.status!='deleted' ORDER BY u.created_at DESC`).all(),
       env.DB.prepare("SELECT r.*,u.full_name,c.name company_name FROM password_reset_requests r LEFT JOIN users u ON u.id=r.user_id LEFT JOIN companies c ON c.id=r.company_id WHERE r.target_role='admin' ORDER BY r.created_at DESC LIMIT 300").all(),
+      env.DB.prepare(`SELECT sr.*,c.name company_name,u.full_name requester_name,u.email requester_email
+        FROM subscription_activation_requests sr
+        JOIN companies c ON c.id=sr.company_id
+        LEFT JOIN users u ON u.id=sr.requested_by
+        ORDER BY CASE sr.status WHEN 'pending' THEN 0 ELSE 1 END,sr.created_at DESC LIMIT 400`).all(),
       env.DB.prepare("SELECT a.*,u.full_name actor_name,c.name company_name FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_user_id LEFT JOIN companies c ON c.id=a.company_id ORDER BY a.created_at DESC LIMIT 400").all()
     ]);
     const outUsers=[];
@@ -706,10 +729,10 @@ async function load(req,env){
       if(!ready) ready=!!(await getMemberCredentialKV(env,u.id));
       outUsers.push({...u,credential_ready:ready?1:0});
     }
-    return json({mode:"superadmin",companies:companies.results,users:outUsers,resets:resets.results,logs:logs.results});
+    return json({mode:"superadmin",companies:companies.results,users:outUsers,resets:resets.results,subscriptionRequests:subscriptionRequests.results,logs:logs.results});
   }
   const c=s.u.company_id;
-  const [projects,tradeCatalog,trades,suppliers,projectSuppliers,expenses,labor,users,resets]=await Promise.all([
+  const [projects,tradeCatalog,trades,suppliers,projectSuppliers,expenses,labor,users,resets,subscriptionRequests]=await Promise.all([
     env.DB.prepare("SELECT * FROM projects WHERE company_id=? ORDER BY created_at DESC").bind(c).all(),
     env.DB.prepare("SELECT * FROM trade_catalog WHERE company_id=? ORDER BY phase,name").bind(c).all(),
     env.DB.prepare("SELECT * FROM trades WHERE company_id=? ORDER BY name").bind(c).all(),
@@ -719,13 +742,14 @@ async function load(req,env){
     env.DB.prepare("SELECT l.*,p.name project_name,t.name trade_name,t.phase trade_phase FROM labor_expenses l JOIN projects p ON p.id=l.project_id LEFT JOIN trades t ON t.id=l.trade_id WHERE l.company_id=? ORDER BY l.expense_date DESC,l.created_at DESC").bind(c).all(),
     s.u.role==="admin"?env.DB.prepare(`SELECT u.id,u.email,u.full_name,u.phone,u.role,u.status,u.created_at
       FROM users u WHERE u.company_id=? AND u.status!='deleted' ORDER BY u.created_at DESC`).bind(c).all():Promise.resolve({results:[]}),
-    s.u.role==="admin"?env.DB.prepare("SELECT r.*,u.full_name FROM password_reset_requests r LEFT JOIN users u ON u.id=r.user_id WHERE r.company_id=? AND r.target_role='agent' ORDER BY r.created_at DESC LIMIT 200").bind(c).all():Promise.resolve({results:[]})
+    s.u.role==="admin"?env.DB.prepare("SELECT r.*,u.full_name FROM password_reset_requests r LEFT JOIN users u ON u.id=r.user_id WHERE r.company_id=? AND r.target_role='agent' ORDER BY r.created_at DESC LIMIT 200").bind(c).all():Promise.resolve({results:[]}),
+    s.u.role==="admin"?env.DB.prepare("SELECT id,requested_plan,payment_phone,transaction_id,status,support_note,created_at,handled_at FROM subscription_activation_requests WHERE company_id=? ORDER BY created_at DESC LIMIT 30").bind(c).all():Promise.resolve({results:[]})
   ]);
   const outUsers=[];
   for(const u of users.results||[]){
     outUsers.push({...u,credential_ready:(await getMemberCredentialKV(env,u.id))?1:0});
   }
-  return json({mode:"company",projects:projects.results,tradeCatalog:tradeCatalog.results,trades:trades.results,suppliers:suppliers.results,projectSuppliers:projectSuppliers.results,expenses:expenses.results,labor:labor.results,users:outUsers,resets:resets.results});
+  return json({mode:"company",projects:projects.results,tradeCatalog:tradeCatalog.results,trades:trades.results,suppliers:suppliers.results,projectSuppliers:projectSuppliers.results,expenses:expenses.results,labor:labor.results,users:outUsers,resets:resets.results,subscriptionRequests:subscriptionRequests.results});
 }
 
 async function save(req,env){
@@ -772,6 +796,42 @@ async function writableProject(env,companyId,projectId){
 async function saveCompany(req,env,s,entity,action,r){
   const c=s.u.company_id,actor=s.u;
   if(["company","plan","subscription"].includes(entity))return json({error:"Champ protégé par le Super Admin"},403);
+
+  if(entity==="account"&&action==="update"){
+    if(actor.role!=="admin")return json({error:"Modification réservée à l'Administrateur"},403);
+    const companyName=text(r.company_name,180),adminName=text(r.admin_name,160),adminEmail=email(r.admin_email);
+    if(!companyName||!adminName||!adminEmail)return json({error:"Entreprise, Administrateur et e-mail obligatoires"},400);
+    const duplicate=await env.DB.prepare("SELECT id FROM users WHERE lower(email)=lower(?) AND id<>?").bind(adminEmail,actor.id).first();
+    if(duplicate)return json({error:"Cette adresse e-mail est déjà utilisée"},409);
+    await env.DB.prepare("UPDATE companies SET name=?,phone=?,email=?,city=?,address=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .bind(companyName,text(r.company_phone,50),email(r.company_email)||null,text(r.city,120),text(r.address,240),c).run();
+    await env.DB.prepare("UPDATE users SET full_name=?,email=?,phone=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?")
+      .bind(adminName,adminEmail,text(r.admin_phone,50),actor.id,c).run();
+    await audit(env,actor,"UPDATE_ACCOUNT","company",c,ip(req));
+    return json({ok:true});
+  }
+
+  if(entity==="subscription_request"&&action==="create"){
+    if(actor.role!=="admin")return json({error:"Demande réservée à l'Administrateur"},403);
+    const company=await env.DB.prepare("SELECT id,plan,plan_expires_at FROM companies WHERE id=? AND status='active'").bind(c).first();
+    if(!company)return json({error:"Entreprise introuvable ou inactive"},404);
+    const paidActive=["standard","business"].includes(String(company.plan||"").toLowerCase())&&Date.parse(company.plan_expires_at)>Date.now();
+    if(paidActive)return json({error:"Votre abonnement payant est déjà actif. Aucune nouvelle demande ni paiement n'est autorisé pendant sa validité."},409);
+    const pending=await env.DB.prepare("SELECT id FROM subscription_activation_requests WHERE company_id=? AND status='pending' LIMIT 1").bind(c).first();
+    if(pending)return json({error:"Une demande d'activation est déjà en attente de traitement par le support."},409);
+    const requestedPlan=normalizePlan(r.requested_plan);
+    if(!["standard","business"].includes(requestedPlan))return json({error:"Choisissez la formule Standard ou Business"},400);
+    const paymentPhone=text(r.payment_phone,50),transactionId=text(r.transaction_id,120);
+    if(!paymentPhone||!transactionId)return json({error:"Numéro de paiement et ID de transaction obligatoires"},400);
+    const duplicateTransaction=await env.DB.prepare("SELECT id FROM subscription_activation_requests WHERE lower(transaction_id)=lower(?) LIMIT 1").bind(transactionId).first();
+    if(duplicateTransaction)return json({error:"Cet ID de transaction a déjà été transmis au support"},409);
+    const id=crypto.randomUUID();
+    await env.DB.prepare("INSERT INTO subscription_activation_requests(id,company_id,requested_by,requested_plan,payment_phone,transaction_id,status) VALUES(?,?,?,?,?,?,'pending')")
+      .bind(id,c,actor.id,requestedPlan,paymentPhone,transactionId).run();
+    await audit(env,actor,"SUBSCRIPTION_REQUEST","subscription_request",id,ip(req),{plan:requestedPlan});
+    return json({ok:true,id,message:"Demande envoyée au support"});
+  }
+
   if(entity==="project"){
     if(action==="create"){
       if(actor.role!=="admin")return json({error:"Création réservée à l'Administrateur"},403);
@@ -917,6 +977,25 @@ async function saveSuper(req,env,s,entity,action,r){
     if(["activate","disable","delete"].includes(action)){const st={activate:"active",disable:"disabled",delete:"deleted"}[action];await env.DB.prepare("UPDATE users SET status=?,password_version=password_version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(st,u.id).run();if(action==="delete")await deleteMemberCredentialKV(env,u.id);await audit(env,actor,"MEMBER_"+action.toUpperCase(),"user",u.id,ip(req));return json({ok:true})}
     if(action==="reset_password"){await setMemberCredentialKV(env,u.id,r.new_password);await env.DB.prepare("UPDATE users SET password_version=password_version+1,must_change_password=1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(u.id).run();if(r.reset_request_id)await env.DB.prepare("UPDATE password_reset_requests SET status='resolved',handled_by=?,handled_at=CURRENT_TIMESTAMP WHERE id=?").bind(actor.id,r.reset_request_id).run();await audit(env,actor,"RESET_MEMBER_PASSWORD","user",u.id,ip(req));return json({ok:true})}
   }
+  if(entity==="subscription_request"){
+    const request=await env.DB.prepare("SELECT * FROM subscription_activation_requests WHERE id=?").bind(r.id).first();
+    if(!request)return json({error:"Demande d'activation introuvable"},404);
+    if(request.status!=="pending")return json({error:"Cette demande a déjà été traitée"},409);
+    if(action==="approve"){
+      const plan=normalizePlan(request.requested_plan);
+      if(!["standard","business"].includes(plan))return json({error:"Formule demandée invalide"},400);
+      const start=now(),end=plusDays(planDays(plan));
+      await env.DB.prepare("UPDATE companies SET plan=?,plan_started_at=?,plan_expires_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(plan,start,end,request.company_id).run();
+      await env.DB.prepare("UPDATE subscription_activation_requests SET status='approved',handled_by=?,support_note=?,handled_at=CURRENT_TIMESTAMP WHERE id=?").bind(actor.id,text(r.support_note,500),request.id).run();
+      await audit(env,actor,"APPROVE_SUBSCRIPTION","subscription_request",request.id,ip(req),{company_id:request.company_id,plan});
+      return json({ok:true});
+    }
+    if(action==="reject"){
+      await env.DB.prepare("UPDATE subscription_activation_requests SET status='rejected',handled_by=?,support_note=?,handled_at=CURRENT_TIMESTAMP WHERE id=?").bind(actor.id,text(r.support_note,500),request.id).run();
+      await audit(env,actor,"REJECT_SUBSCRIPTION","subscription_request",request.id,ip(req),{company_id:request.company_id});
+      return json({ok:true});
+    }
+  }
   if(entity==="reset"&&action==="reject"){await env.DB.prepare("UPDATE password_reset_requests SET status='rejected',handled_by=?,handled_at=CURRENT_TIMESTAMP WHERE id=?").bind(actor.id,r.id).run();return json({ok:true})}
   return json({error:"Action Super Admin non autorisée"},403);
 }
@@ -946,7 +1025,7 @@ async function cryptoHealth(req,env){
     const test=await makeMemberCredential("GlobalBT-Test-2026!");
     return json({
       ok:true,
-      app_version:"39.0.0",
+      app_version:"40.0.0",
       algorithm:"PBKDF2-SHA-256",
       iterations:test.password_iterations,
       elapsed_ms:Date.now()-started
@@ -954,7 +1033,7 @@ async function cryptoHealth(req,env){
   }catch(e){
     return json({
       ok:false,
-      app_version:"39.0.0",
+      app_version:"40.0.0",
       code:e?.message||"PASSWORD_HASH_FAILED",
       elapsed_ms:Date.now()-started
     },500);
@@ -988,7 +1067,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"39.0.0",
+    app_version:"40.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,

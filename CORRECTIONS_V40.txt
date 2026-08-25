@@ -1,0 +1,22 @@
+GLOBAL BT V40.0.0 — CORRECTIONS CIBLÉES
+
+1. PARAMÈTRES / MON COMPTE
+- Ajout d'un bouton « Mon compte » dans Paramètres.
+- Popup professionnel avec informations entreprise + Administrateur modifiables.
+- Champs : entreprise, téléphone, e-mail, ville, adresse, nom Administrateur, téléphone, e-mail de connexion.
+
+2. ABONNEMENTS
+- Ajout du bouton « Activer mon abonnement » pour les comptes autorisés.
+- Popup professionnel : formule Standard/Business, paiement Wave, numéro utilisé pour le paiement, ID transaction.
+- Bouton « Envoyer au support ».
+- La demande est enregistrée dans la section Abonnements du Super Admin.
+
+3. SUPER ADMIN
+- Nouvelle liste « Demandes d'activation » avec entreprise, formule, téléphone, transaction et statut.
+- Actions Activer / Rejeter avec note support.
+- Une activation approuvée applique automatiquement la durée du plan demandé.
+
+4. PROTECTIONS
+- Standard ou Business actif : aucune nouvelle demande d'activation et aucun bouton de paiement.
+- Une demande déjà en attente bloque toute seconde demande.
+- Un ID de transaction déjà transmis ne peut pas être réutilisé.

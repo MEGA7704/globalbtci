@@ -40,7 +40,11 @@ Version consolidée, conçue pour éviter de publier les secrets dans GitHub.
   `https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=2100`
 - Paiement Business :
   `https://pay.wave.com/m/M_ci_Enx-2JNAklk-/c/ci/?amount=20600`
-- Ouvrir un lien de paiement ne change pas automatiquement le plan. Le Super Admin active Standard ou Business après validation du paiement.
+- Le bouton « Activer mon abonnement » ouvre un popup de paiement et de transmission au support.
+- Après paiement, l’Administrateur transmet le numéro utilisé et l’ID de transaction.
+- La demande apparaît dans **Super Admin > Abonnements**, où elle peut être activée ou rejetée.
+- Un plan Standard ou Business encore actif bloque toute nouvelle demande et tout nouveau bouton de paiement.
+- Une demande en attente bloque également toute nouvelle transmission/paiement dans l’interface.
 
 ## Super Admin — secret hors GitHub
 
@@ -329,3 +333,13 @@ Refonte visuelle du popup projet :
 - en-tête, bannière KPI, onglets et pied restent visibles ;
 - affichage encore plus compact sur écrans larges mais peu hauts ;
 - tablette et mobile conservent un comportement responsive avec défilement adapté.
+
+
+## V40 — Compte entreprise et demandes d’activation
+
+- Paramètres : bouton **Mon compte** avec informations entreprise/Administrateur modifiables par l’Administrateur.
+- Abonnement : popup professionnel Standard/Business avec lien Wave, téléphone de paiement et ID de transaction.
+- Bouton **Envoyer au support** : enregistrement immédiat dans la section Abonnements du Super Admin.
+- Super Admin : actions **Activer** / **Rejeter** avec note support.
+- Activation validée : recalcul automatique de la date de début et d’expiration selon la formule.
+- Protection anti-double demande et anti-réutilisation d’un ID de transaction.
