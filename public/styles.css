@@ -710,13 +710,5 @@ label>.password-field-wrap input{margin-top:0}
 /* V37 */
 #v37TradeForm label,#v37ProjectTradeForm label,#v37EditTradeForm label{display:block;margin-bottom:13px}.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}#v37Activity option{white-space:normal}@media print{@page{size:A4 portrait;margin:12mm}.topbar,.project-page-toolbar,.project-page-tabs,.toolbar,.actions,.btn{display:none!important}}
 
-/* ===== V38 TABLEAUX PROJET ===== */
-.v38-actions-center{display:flex!important;justify-content:center!important;align-items:center!important;gap:6px!important;text-align:center!important}
-.v38-searchbar{display:flex;margin:0 0 12px}
-.v38-searchbar input{width:100%;max-width:620px;border:1px solid var(--line);border-radius:10px;padding:11px 13px}
-.project-page-card table th,.project-page-card table td{vertical-align:middle}
-.project-page-card table th{white-space:nowrap}
-@media print{
-  @page{size:A4 landscape;margin:10mm}
-  .v38-searchbar,.project-page-tabs,.project-page-toolbar,.toolbar,.actions,.v38-actions-center{display:none!important}
-}
+/* V38 */
+.center{text-align:center!important}.actions.centered{justify-content:center}.project-searchbar{margin-bottom:10px}.project-searchbar input{width:100%;max-width:560px}

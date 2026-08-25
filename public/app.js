@@ -446,13 +446,14 @@ function initProfessionalTradeForm(root=document){
 }
 
 function trades(){
-  const rows=(S.data.trades||[]).map(x=>`<tr><td>${esc(S.data.projects.find(p=>p.id===x.project_id)?.name||"")}</td><td><span class="phase-badge">${esc(x.phase||"")}</span></td><td><strong>${esc(x.name)}</strong></td><td>${esc(x.description||"")}</td><td><div class="actions"><button class="btn small secondary v37EditTrade" data-id="${x.id}">Modifier</button>${S.session.user.role==="admin"?`<button class="btn small danger v37DeleteTrade" data-id="${x.id}">Supprimer</button>`:""}</div></td></tr>`);
-  $("#content").innerHTML=`<div class="panel"><div class="panelhead"><div><h2>Métiers</h2><p class="muted">Liste des sous-corps de métier enregistrés par projet.</p></div><div class="toolbar"><button id="v37PrintTrades" class="btn secondary">Imprimer / PDF</button><button id="v37AddTrade" class="btn primary">+ Ajouter un sous-corps de métier</button></div></div>${table(["Projet","Corps principal","Activité","Description","Actions"],rows)}</div>`;
-  $("#v37PrintTrades").onclick=()=>printA4("Liste des métiers",S.session.company?.name||"",`<table><tr><th>Projet</th><th>Corps principal</th><th>Activité</th><th>Description</th></tr>${(S.data.trades||[]).map(x=>`<tr><td>${esc(S.data.projects.find(p=>p.id===x.project_id)?.name||"")}</td><td>${esc(x.phase||"")}</td><td>${esc(x.name)}</td><td>${esc(x.description||"")}</td></tr>`).join("")}</table>`);
-  $("#v37AddTrade").onclick=()=>{modal(`<h2>Ajouter un sous-corps de métier</h2>${renderProfessionalTradeForm()}`);initProfessionalTradeForm($("#modalBody"))};
-  document.querySelectorAll(".v37EditTrade").forEach(b=>b.onclick=()=>{const x=S.data.trades.find(t=>t.id===b.dataset.id);if(!x)return;modal(`<h2>Modifier le sous-corps de métier</h2><form id="v37EditTradeForm" data-id="${x.id}"><label>Projet<select name="project_id" required>${opts(S.data.projects,x.project_id)}</select></label><label>Corps principal<input name="phase" value="${esc(x.phase||"")}"></label><label>Activité<input name="name" value="${esc(x.name)}" required></label><label>Description<textarea name="description">${esc(x.description||"")}</textarea></label><button class="btn primary full">Enregistrer</button></form>`)});
-  document.querySelectorAll(".v37DeleteTrade").forEach(b=>b.onclick=()=>confirmBox("Supprimer ce métier ?",async()=>{await post("/api/save",{entity:"trade",action:"delete",record:{id:b.dataset.id}});await reload();trades();toast("Métier supprimé")}));
+  const catalog=S.data.tradeCatalog||[];
+  $("#content").innerHTML=`<div class="panel"><div class="panelhead"><div><h2>Métiers</h2><p class="muted">Référentiel général des métiers disponibles pour les projets.</p></div><div class="toolbar"><button id="v38PrintTrades" class="btn secondary">Imprimer / PDF</button><button id="v38AddTrade" class="btn primary">+ Ajouter un sous-corps de métier</button></div></div>${table(["Corps principal","Activité","Actions"],catalog.map(x=>`<tr><td><strong>${esc(x.main_group)}</strong></td><td>${esc(x.activity)}</td><td><div class="actions"><button class="btn small secondary v38EditTrade" data-id="${x.id}">Modifier</button>${S.session.user.role==="admin"?`<button class="btn small danger v38DeleteTrade" data-id="${x.id}">Supprimer</button>`:""}</div></td></tr>`))}</div>`;
+  $("#v38PrintTrades").onclick=()=>printA4("Liste générale des métiers",S.session.company?.name||"",`<table><tr><th>Corps principal</th><th>Activité</th></tr>${catalog.map(x=>`<tr><td>${esc(x.main_group)}</td><td>${esc(x.activity)}</td></tr>`).join("")}</table>`);
+  $("#v38AddTrade").onclick=()=>{modal(`<h2>Ajouter un sous-corps de métier</h2><form id="v38TradeCatalogForm"><label>Corps principal<select id="v38TradeGroup" required>${PROFESSIONAL_TRADE_GROUPS.map(g=>`<option value="${esc(g.key)}">${esc(g.label)}</option>`).join("")}</select></label><label id="v38OtherGroupWrap" class="hidden">Autre corps principal<input id="v38OtherGroup"></label><label id="v38ActivityWrap">Activité<select id="v38Activity" required></select></label><label id="v38OtherActivityWrap" class="hidden">Autre activité<input id="v38OtherActivity"></label><button class="btn primary full">Ajouter</button></form>`);v38InitCatalogForm()};
+  document.querySelectorAll(".v38EditTrade").forEach(b=>b.onclick=()=>{const x=catalog.find(t=>t.id===b.dataset.id);modal(`<h2>Modifier le métier</h2><form id="v38TradeCatalogEditForm" data-id="${x.id}"><label>Corps principal<input name="main_group" value="${esc(x.main_group)}" required></label><label>Activité<input name="activity" value="${esc(x.activity)}" required></label><button class="btn primary full">Enregistrer</button></form>`)});
+  document.querySelectorAll(".v38DeleteTrade").forEach(b=>b.onclick=()=>confirmBox("Supprimer ce métier de la liste générale ?",async()=>{await post("/api/save",{entity:"trade_catalog",action:"delete",record:{id:b.dataset.id}});await reload();trades();toast("Métier supprimé")}));
 }
+function v38InitCatalogForm(){const g=$("#v38TradeGroup"),a=$("#v38Activity"),og=$("#v38OtherGroupWrap"),oa=$("#v38OtherActivityWrap");const draw=()=>{const x=PROFESSIONAL_TRADE_GROUPS.find(v=>v.key===g.value)||PROFESSIONAL_TRADE_GROUPS[0],other=x.key==="autres";og.classList.toggle("hidden",!other);$("#v38ActivityWrap").classList.toggle("hidden",other);if(other){oa.classList.remove("hidden");return}a.innerHTML=x.activities.map(([n])=>`<option value="${esc(n)}">${esc(n)}</option>`).join("");oa.classList.toggle("hidden",a.value!=="Autre")};g.onchange=draw;a.onchange=()=>oa.classList.toggle("hidden",a.value!=="Autre");draw()}
 
 function suppliers(){$("#content").innerHTML=`<div class="panel"><div class="panelhead"><h2>Fournisseurs</h2><div class="toolbar"><button id="v37PrintSuppliers" class="btn secondary">Imprimer / PDF</button><button id="addSupplier" class="btn primary">+ Ajouter</button></div></div>${table(["Nom","Contact","Ville","Spécialité","Actions"],S.data.suppliers.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.phone||"")}</td><td>${esc(x.city||"")}</td><td>${esc(x.specialty||"")}</td><td>${S.session.user.role==="admin"?`<button class="btn small danger del-sup" data-id="${x.id}">Supprimer</button>`:""}</td></tr>`))}</div>`;$("#addSupplier").onclick=()=>modal(`<h2>Nouveau fournisseur</h2><form id="supplierForm" class="formgrid"><label>Nom<input name="name" required></label><label>Téléphone<input name="phone"></label><label>E-mail<input name="email" type="email"></label><label>Ville<input name="city"></label><label>Adresse<input name="address"></label><label>Spécialité<input name="specialty"></label><label class="span2">Notes<textarea name="notes"></textarea></label><button class="btn primary span2">Ajouter</button></form>`);document.querySelectorAll(".del-sup").forEach(b=>b.onclick=()=>confirmBox("Supprimer ce fournisseur ?",()=>post("/api/save",{entity:"supplier",action:"delete",record:{id:b.dataset.id}})))}
 document.addEventListener("submit",async e=>{if(e.target.id==="supplierForm"){e.preventDefault();try{await post("/api/save",{entity:"supplier",action:"create",record:fd(e.target)});closeModal();await reload();suppliers();toast("Fournisseur ajouté")}catch(x){toast(x.message,true)}}});
@@ -505,197 +506,41 @@ function v29TradeIcon(name){
   return "🛠";
 }
 
-function v36ProjectPage(projectId,initialView="trades"){
-  const p=S.data.projects.find(x=>x.id===projectId);if(!p)return;
-  S.currentProjectId=projectId;
-  S.currentProjectView=initialView;
-
-  const trades=(S.data.trades||[]).filter(x=>x.project_id===projectId);
-  const expenses=(S.data.expenses||[]).filter(x=>x.project_id===projectId);
-  const suppliers=(S.data.projectSuppliers||[]).filter(x=>x.project_id===projectId);
-  const laborRows=(S.data.labor||[]).filter(x=>x.project_id===projectId);
-  const laborTotal=laborRows.reduce((a,x)=>a+Number(x.amount||0),0);
-  const expenseTotal=expenses.reduce((a,x)=>a+Number(x.total_price||0),0);
-  const updated=new Date().toLocaleString("fr-FR",{day:"2-digit",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"});
-  const pages={trades:0,expenses:0,suppliers:0},pageSize=6;
-
-  $("#content").innerHTML=`
-    <section class="project-page-pro">
-      <div class="project-page-toolbar">
-        <button id="projectBack" class="btn secondary">← Retour aux projets</button>
-        <div class="project-page-titlebar">
-          <span class="eyebrow">ESPACE PROJET</span>
-          <span class="project-page-update">Mis à jour le ${esc(updated)}</span>
-        </div>
-      </div>
-
-      <div class="project-page-hero">
-        <div class="project-page-identity">
-          <div class="project-page-icon">▥</div>
-          <div>
-            <h1>${esc(p.name)}</h1>
-            <p>⌖ ${esc(p.location||"Localité non renseignée")}</p>
-            <span class="status">${esc({preparation:"Préparation",in_progress:"En cours",suspended:"Suspendu",completed:"Terminé",closed:"Clôturé"}[p.status]||p.status)}</span>
-          </div>
-        </div>
-        <div class="project-page-kpis">
-          <div class="project-page-kpi"><small>Budget</small><strong>${cash(p.budget)}</strong></div>
-          <div class="project-page-kpi gold"><small>Matériaux</small><strong>${cash(expenseTotal)}</strong></div>
-          <div class="project-page-kpi blue"><small>Main-d'œuvre</small><strong>${cash(laborTotal)}</strong></div>
-        </div>
-      </div>
-
-      <div class="project-page-tabs">
-        <button class="project-page-tab ${initialView==="trades"?"active":""}" data-view="trades">Métiers <b>${trades.length}</b></button>
-        <button class="project-page-tab ${initialView==="expenses"?"active":""}" data-view="expenses">Matériaux <b>${expenses.length}</b></button>
-        <button class="project-page-tab ${initialView==="suppliers"?"active":""}" data-view="suppliers">Fournisseurs <b>${suppliers.length}</b></button>
-      </div>
-
-      <div id="projectPageContent" class="project-page-content"></div>
-    </section>`;
-
-  $("#projectBack").onclick=()=>{S.currentProjectId=null;projects()};
-
-  const content=$("#projectPageContent"),tabs=[...document.querySelectorAll(".project-page-tab")];
-
-  const pager=(view,total)=>{
-    const count=Math.max(1,Math.ceil(total/pageSize)),page=Math.min(pages[view],count-1);
-    pages[view]=page;
-    if(count<=1)return "";
-    return `<div class="project-page-pager">
-      <button class="btn small secondary project-page-prev" ${page===0?"disabled":""}>←</button>
-      <span>Page ${page+1} / ${count}</span>
-      <button class="btn small secondary project-page-next" ${page===count-1?"disabled":""}>→</button>
-    </div>`;
-  };
-  const slice=(view,arr)=>arr.slice(pages[view]*pageSize,pages[view]*pageSize+pageSize);
-  const bindPager=(view,total)=>{
-    const max=Math.max(0,Math.ceil(total/pageSize)-1);
-    content.querySelector(".project-page-prev")?.addEventListener("click",()=>{pages[view]=Math.max(0,pages[view]-1);show(view)});
-    content.querySelector(".project-page-next")?.addEventListener("click",()=>{pages[view]=Math.min(max,pages[view]+1);show(view)});
-  };
-
-  const show=view=>{
-    S.currentProjectView=view;
-    tabs.forEach(b=>b.classList.toggle("active",b.dataset.view===view));
-
+function v38ProjectPage(projectId,initialView="trades"){
+  const p=S.data.projects.find(x=>x.id===projectId);if(!p)return;S.currentProjectId=projectId;
+  const catalog=S.data.tradeCatalog||[],links=(S.data.projectTrades||[]).filter(x=>x.project_id===projectId),expenses=(S.data.expenses||[]).filter(x=>x.project_id===projectId),suppliers=(S.data.projectSuppliers||[]).filter(x=>x.project_id===projectId),labor=(S.data.labor||[]).filter(x=>x.project_id===projectId);
+  const materialTotal=expenses.reduce((a,x)=>a+Number(x.total_price||0),0),laborTotal=labor.reduce((a,x)=>a+Number(x.amount||0),0);
+  $("#content").innerHTML=`<section class="project-page-pro"><div class="project-page-toolbar"><button id="projectBack" class="btn secondary">← Retour aux projets</button></div><div class="project-page-hero"><div class="project-page-identity"><div class="project-page-icon">▥</div><div><h1>${esc(p.name)}</h1><p>⌖ ${esc(p.location||"")}</p></div></div><div class="project-page-kpis"><div class="project-page-kpi"><small>Budget</small><strong>${cash(p.budget)}</strong></div><div class="project-page-kpi gold"><small>Matériaux</small><strong>${cash(materialTotal)}</strong></div><div class="project-page-kpi blue"><small>Main-d'œuvre</small><strong>${cash(laborTotal)}</strong></div></div></div><div class="project-page-tabs"><button class="project-page-tab" data-view="trades">Métiers <b>${links.length}</b></button><button class="project-page-tab" data-view="expenses">Matériaux <b>${expenses.length}</b></button><button class="project-page-tab" data-view="suppliers">Fournisseurs <b>${suppliers.length}</b></button></div><div id="projectPageContent" class="project-page-content"></div></section>`;
+  $("#projectBack").onclick=()=>projects();const content=$("#projectPageContent"),tabs=[...document.querySelectorAll(".project-page-tab")];
+  function show(view){tabs.forEach(b=>b.classList.toggle("active",b.dataset.view===view));
     if(view==="trades"){
-      const rows=slice(view,trades);
-      content.innerHTML=`
-        <div class="project-page-section-head">
-          <div><h2>Métiers du projet</h2><p>Consultez, ajoutez et gérez les métiers affectés à ce projet.</p></div>
-          <div class="toolbar"><button id="v37PrintProjectTrades" class="btn secondary">Imprimer / PDF</button><button id="projectAddTrade" class="btn primary">+ Ajouter un métier</button></div>
-        </div>
-        <div class="project-page-card">
-          ${table(["Métier","Phase","Main-d'œuvre","Actions"],rows.map(t=>{
-            const mt=laborRows.filter(l=>l.trade_id===t.id).reduce((a,x)=>a+Number(x.amount||0),0);
-            return `<tr>
-              <td><strong>${esc(t.name)}</strong></td>
-              <td><span class="phase-badge">${esc(phaseShort(t.phase||phaseForTrade(t.name)))}</span></td>
-              <td class="money">${cash(mt)}</td>
-              <td><div class="actions">
-                <button class="btn small secondary page-view-trade" data-id="${t.id}">Voir</button>
-                <button class="btn small secondary page-edit-trade" data-id="${t.id}">Modifier</button>
-                ${S.session.user.role==="admin"?`<button class="btn small danger page-delete-trade" data-id="${t.id}">Supprimer</button>`:""}
-              </div></td>
-            </tr>`;
-          }))}
-        </div>
-        ${pager(view,trades.length)}`;
-
-      $("#projectAddTrade").onclick=()=>{modal(`<h2>Ajouter un sous-corps de métier · ${esc(p.name)}</h2>${renderProfessionalTradeForm(projectId)}`);initProfessionalTradeForm($("#modalBody"))};
-
-      document.querySelectorAll(".page-view-trade").forEach(b=>b.onclick=()=>{
-        const t=trades.find(x=>x.id===b.dataset.id);if(!t)return;
-        const labor=laborRows.filter(x=>x.trade_id===t.id);
-        modal(`<h2>${esc(t.name)}</h2><p><strong>Phase :</strong> ${esc(phaseLabel(t.phase||phaseForTrade(t.name)))}</p><p><strong>Description :</strong> ${esc(t.description||"—")}</p><h3>Main-d'œuvre</h3>${table(["Date","Prestataire","Travaux","Montant"],labor.map(x=>`<tr><td>${df(x.expense_date)}</td><td>${esc(x.worker_name||"")}</td><td>${esc(x.description||"")}</td><td class="money">${cash(x.amount)}</td></tr>`))}`);
-      });
-
-      document.querySelectorAll(".page-edit-trade").forEach(b=>b.onclick=()=>{
-        const t=trades.find(x=>x.id===b.dataset.id);if(!t)return;
-        modal(`<h2>Modifier le métier</h2><form id="v36TradeEditForm" data-id="${t.id}" data-project="${projectId}">
-          <label>Phase<select name="phase">${TRADE_PHASES.map(ph=>`<option value="${esc(ph.key)}" ${ph.key===(t.phase||phaseForTrade(t.name))?"selected":""}>${esc(ph.label)}</option>`).join("")}</select></label>
-          <label>Métier<input name="name" value="${esc(t.name)}" required></label>
-          <label>Description<textarea name="description">${esc(t.description||"")}</textarea></label>
-          <button class="btn primary full">Enregistrer</button>
-        </form>`);
-      });
-
-      document.querySelectorAll(".page-delete-trade").forEach(b=>b.onclick=()=>confirmBox("Supprimer ce métier ?",async()=>{
-        await post("/api/save",{entity:"trade",action:"delete",record:{id:b.dataset.id}});
-        await reload();v36ProjectPage(projectId,"trades");toast("Métier supprimé");
-      }));
-      bindPager(view,trades.length);
+      content.innerHTML=`<div class="project-page-section-head"><div><h2>Métiers du projet</h2><p>Seuls les métiers enregistrés dans la liste générale peuvent être ajoutés.</p></div><div class="toolbar"><button id="v38PrintProjectTrades" class="btn secondary">Imprimer / PDF</button><button id="v38AddProjectTrade" class="btn primary">+ Ajouter au projet</button></div></div><div class="project-page-card">${table(["Métier / Corps principal","Activité","Description activité","Main-d'œuvre","Actions"],links.map(x=>{const mt=labor.filter(l=>l.trade_id===x.trade_catalog_id).reduce((a,l)=>a+Number(l.amount||0),0);return `<tr><td><strong>${esc(x.main_group)}</strong></td><td>${esc(x.activity)}</td><td>${esc(x.activity_description||"—")}</td><td class="money">${cash(mt)}</td><td class="center"><div class="actions centered"><button class="btn small secondary v38ProjectTradeEdit" data-id="${x.id}">Modifier</button><button class="btn small danger v38ProjectTradeDelete" data-id="${x.id}">Supprimer</button></div></td></tr>`}))}</div>`;
+      $("#v38AddProjectTrade").onclick=()=>{const used=new Set(links.map(x=>x.trade_catalog_id)),avail=catalog.filter(x=>!used.has(x.id));modal(`<h2>Ajouter un métier au projet</h2><form id="v38ProjectTradeForm" data-project="${projectId}"><label>Métier enregistré<select name="trade_catalog_id" required>${avail.map(x=>`<option value="${x.id}">${esc(x.main_group)} — ${esc(x.activity)}</option>`).join("")}</select></label><button class="btn primary full">Ajouter</button></form>`)};
+      document.querySelectorAll(".v38ProjectTradeEdit").forEach(b=>b.onclick=()=>{const x=links.find(v=>v.id===b.dataset.id);modal(`<h2>Métier du projet</h2><p><strong>${esc(x.main_group)}</strong></p><p>${esc(x.activity)}</p><p class="muted">La définition du métier se modifie dans la liste générale.</p><button class="btn primary full" onclick="closeModal()">Fermer</button>`)});
+      document.querySelectorAll(".v38ProjectTradeDelete").forEach(b=>b.onclick=()=>confirmBox("Retirer ce métier du projet ?",async()=>{await post("/api/save",{entity:"project_trade",action:"delete",record:{id:b.dataset.id,project_id:projectId}});await reload();v38ProjectPage(projectId,"trades");toast("Métier retiré du projet")}));
+      $("#v38PrintProjectTrades").onclick=()=>printA4(`Métiers du projet — ${p.name}`,p.location||"",`<table><tr><th>Corps principal</th><th>Activité</th><th>Description activité</th><th>Main-d'œuvre</th></tr>${links.map(x=>{const mt=labor.filter(l=>l.trade_id===x.trade_catalog_id).reduce((a,l)=>a+Number(l.amount||0),0);return `<tr><td>${esc(x.main_group)}</td><td>${esc(x.activity)}</td><td>${esc(x.activity_description||"")}</td><td>${cash(mt)}</td></tr>`}).join("")}</table>`);
     }
-
     if(view==="expenses"){
-      const rows=slice(view,expenses);
-      content.innerHTML=`
-        <div class="project-page-section-head">
-          <div><h2>Matériaux du projet</h2><p>Suivez les matériaux par métier et fournisseur.</p></div>
-          <div class="toolbar"><button id="v37PrintProjectMaterials" class="btn secondary">Imprimer / PDF</button><button id="projectAddExpense" class="btn primary">+ Ajouter des matériaux</button></div>
-        </div>
-        <div class="project-page-card">
-          ${table(["Date","Métier","Désignation","Fournisseur","Montant","Actions"],rows.map(x=>`<tr>
-            <td>${df(x.expense_date)}</td><td>${esc(x.trade_name||"—")}</td><td><strong>${esc(x.description||"")}</strong></td><td>${esc(x.supplier_name||"—")}</td><td class="money">${cash(x.total_price)}</td><td>${S.session.user.role==="admin"?`<button class="btn small danger page-delete-expense" data-id="${x.id}">Supprimer</button>`:"—"}</td>
-          </tr>`))}
-        </div>${pager(view,expenses.length)}`;
-
-      $("#projectAddExpense").onclick=()=>modal(`<h2>Nouveaux matériaux · ${esc(p.name)}</h2><form id="v36ExpenseForm" data-project="${projectId}">
-        <label>Métier<select name="trade_id">${opts(trades)}</select></label>
-        <label>Fournisseur<select name="supplier_id">${opts(S.data.suppliers||[])}</select></label>
-        <label>Date<input name="expense_date" type="date" value="${new Date().toISOString().slice(0,10)}"></label>
-        <label>Désignation<input name="description" required></label>
-        <label>Quantité<input name="quantity" type="number" step=".01" value="1"></label>
-        <label>Unité<input name="unit"></label>
-        <label>Prix unitaire<input name="unit_price" type="number" min="0"></label>
-        <label>Référence<input name="reference"></label>
-        <button class="btn primary full">Enregistrer</button>
-      </form>`);
-
-      document.querySelectorAll(".page-delete-expense").forEach(b=>b.onclick=()=>confirmBox("Supprimer définitivement cette dépense ?",async()=>{
-        await post("/api/save",{entity:"expense",action:"delete",record:{id:b.dataset.id}});
-        await reload();v36ProjectPage(projectId,"expenses");toast("Matériaux supprimés");
-      }));
-      bindPager(view,expenses.length);
+      content.innerHTML=`<div class="project-page-section-head"><div><h2>Matériaux du projet</h2><p>Recherche par métier, date ou fournisseur.</p></div><div class="toolbar"><button id="v38PrintMaterials" class="btn secondary">Imprimer / PDF</button><button id="v38AddMaterial" class="btn primary">+ Ajouter des matériaux</button></div></div><div class="project-searchbar"><input id="v38MaterialSearch" type="search" placeholder="Rechercher par métier, date ou fournisseur..."></div><div id="v38MaterialsTable" class="project-page-card"></div>`;
+      const draw=()=>{const q=$("#v38MaterialSearch").value.trim().toLowerCase(),rows=expenses.filter(x=>{const l=links.find(v=>v.trade_catalog_id===x.trade_id),txt=`${l?.main_group||x.trade_name||""} ${l?.activity||""} ${x.expense_date||""} ${x.supplier_name||""}`.toLowerCase();return !q||txt.includes(q)});$("#v38MaterialsTable").innerHTML=table(["Date","Métier / Corps principal","Activité","Désignation","Fournisseur","Quantité","Prix unitaire","Prix total","Actions"],rows.map(x=>{const l=links.find(v=>v.trade_catalog_id===x.trade_id);return `<tr><td>${df(x.expense_date)}</td><td>${esc(l?.main_group||x.trade_name||"—")}</td><td>${esc(l?.activity||"—")}</td><td>${esc(x.description||"")}</td><td>${esc(x.supplier_name||"—")}</td><td>${Number(x.quantity||0)}</td><td class="money">${cash(x.unit_price)}</td><td class="money">${cash(x.total_price)}</td><td class="center"><div class="actions centered"><button class="btn small secondary v38MaterialEdit" data-id="${x.id}">Modifier</button><button class="btn small danger v38MaterialDelete" data-id="${x.id}">Supprimer</button></div></td></tr>`}));document.querySelectorAll(".v38MaterialEdit").forEach(b=>b.onclick=()=>{const x=expenses.find(v=>v.id===b.dataset.id);modal(`<h2>Modifier les matériaux</h2><form id="v38MaterialEditForm" data-id="${x.id}" data-project="${projectId}"><label>Date<input name="expense_date" type="date" value="${esc(x.expense_date||"")}"></label><label>Métier<select name="trade_id">${links.map(l=>`<option value="${l.trade_catalog_id}" ${l.trade_catalog_id===x.trade_id?"selected":""}>${esc(l.main_group)} — ${esc(l.activity)}</option>`).join("")}</select></label><label>Fournisseur<select name="supplier_id">${opts(S.data.suppliers||[],x.supplier_id)}</select></label><label>Désignation<input name="description" value="${esc(x.description||"")}" required></label><label>Quantité<input name="quantity" type="number" step=".01" value="${Number(x.quantity||0)}"></label><label>Prix unitaire<input name="unit_price" type="number" value="${Number(x.unit_price||0)}"></label><button class="btn primary full">Enregistrer</button></form>`)});document.querySelectorAll(".v38MaterialDelete").forEach(b=>b.onclick=()=>confirmBox("Supprimer ces matériaux ?",async()=>{await post("/api/save",{entity:"expense",action:"delete",record:{id:b.dataset.id}});await reload();v38ProjectPage(projectId,"expenses");toast("Matériaux supprimés")}))};$("#v38MaterialSearch").oninput=draw;draw();
+      $("#v38AddMaterial").onclick=()=>modal(`<h2>Ajouter des matériaux</h2><form id="v38MaterialForm" data-project="${projectId}"><label>Date<input name="expense_date" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label>Métier<select name="trade_id" required>${links.map(l=>`<option value="${l.trade_catalog_id}">${esc(l.main_group)} — ${esc(l.activity)}</option>`).join("")}</select></label><label>Fournisseur<select name="supplier_id">${opts(S.data.suppliers||[])}</select></label><label>Désignation<input name="description" required></label><label>Quantité<input name="quantity" type="number" step=".01" value="1"></label><label>Prix unitaire<input name="unit_price" type="number" min="0"></label><button class="btn primary full">Enregistrer</button></form>`);
+      $("#v38PrintMaterials").onclick=()=>printA4(`Matériaux du projet — ${p.name}`,p.location||"",`<table><tr><th>Date</th><th>Corps principal</th><th>Activité</th><th>Désignation</th><th>Fournisseur</th><th>Qté</th><th>PU</th><th>Total</th></tr>${expenses.map(x=>{const l=links.find(v=>v.trade_catalog_id===x.trade_id);return `<tr><td>${df(x.expense_date)}</td><td>${esc(l?.main_group||x.trade_name||"")}</td><td>${esc(l?.activity||"")}</td><td>${esc(x.description||"")}</td><td>${esc(x.supplier_name||"")}</td><td>${Number(x.quantity||0)}</td><td>${cash(x.unit_price)}</td><td>${cash(x.total_price)}</td></tr>`}).join("")}</table>`);
     }
-
     if(view==="suppliers"){
-      const rows=slice(view,suppliers);
-      content.innerHTML=`
-        <div class="project-page-section-head">
-          <div><h2>Fournisseurs du projet</h2><p>Consultez et gérez les fournisseurs affectés à ce projet.</p></div>
-          <div class="toolbar"><button id="v37PrintProjectSuppliers" class="btn secondary">Imprimer / PDF</button><button id="projectAddSupplier" class="btn primary">+ Affecter un fournisseur</button></div>
-        </div>
-        <div class="project-page-card">
-          ${table(["Fournisseur","Contact","Spécialité","Matériaux","Actions"],rows.map(x=>{
-            const spent=expenses.filter(e=>e.supplier_id===x.supplier_id).reduce((a,e)=>a+Number(e.total_price||0),0);
-            return `<tr><td><strong>${esc(x.supplier_name)}</strong></td><td>${esc(x.phone||"—")}</td><td>${esc(x.specialty||"—")}</td><td class="money">${cash(spent)}</td><td>${S.session.user.role==="admin"?`<button class="btn small danger page-delete-project-supplier" data-id="${x.id}">Retirer</button>`:"—"}</td></tr>`;
-          }))}
-        </div>${pager(view,suppliers.length)}`;
-
-      $("#projectAddSupplier").onclick=()=>modal(`<h2>Affecter un fournisseur · ${esc(p.name)}</h2><form id="v36SupplierForm" data-project="${projectId}">
-        <label>Fournisseur<select name="supplier_id" required>${opts(S.data.suppliers||[])}</select></label>
-        <label>Notes<textarea name="notes"></textarea></label>
-        <button class="btn primary full">Affecter</button>
-      </form>`);
-
-      document.querySelectorAll(".page-delete-project-supplier").forEach(b=>b.onclick=()=>confirmBox("Retirer ce fournisseur du projet ?",async()=>{
-        await post("/api/save",{entity:"project_supplier",action:"delete",record:{id:b.dataset.id,project_id:projectId}});
-        await reload();v36ProjectPage(projectId,"suppliers");toast("Fournisseur retiré du projet");
-      }));
-      bindPager(view,suppliers.length);
+      content.innerHTML=`<div class="project-page-section-head"><div><h2>Fournisseurs du projet</h2></div><div class="toolbar"><button id="v38PrintProjectSuppliers" class="btn secondary">Imprimer / PDF</button><button id="v38AddProjectSupplier" class="btn primary">+ Affecter un fournisseur</button></div></div><div class="project-page-card">${table(["Fournisseur","Contact","Spécialité","Actions"],suppliers.map(x=>`<tr><td><strong>${esc(x.supplier_name)}</strong></td><td>${esc(x.phone||"")}</td><td>${esc(x.specialty||"")}</td><td class="center"><button class="btn small danger v38RemoveProjectSupplier" data-id="${x.id}">Retirer</button></td></tr>`))}</div>`;
+      $("#v38AddProjectSupplier").onclick=()=>modal(`<h2>Affecter un fournisseur</h2><form id="v38ProjectSupplierForm" data-project="${projectId}"><label>Fournisseur<select name="supplier_id" required>${opts(S.data.suppliers||[])}</select></label><button class="btn primary full">Affecter</button></form>`);
+      document.querySelectorAll(".v38RemoveProjectSupplier").forEach(b=>b.onclick=()=>confirmBox("Retirer ce fournisseur du projet ?",async()=>{await post("/api/save",{entity:"project_supplier",action:"delete",record:{id:b.dataset.id,project_id:projectId}});await reload();v38ProjectPage(projectId,"suppliers");toast("Fournisseur retiré du projet")}));
+      $("#v38PrintProjectSuppliers").onclick=()=>printA4(`Fournisseurs du projet — ${p.name}`,p.location||"",`<table><tr><th>Fournisseur</th><th>Contact</th><th>Spécialité</th></tr>${suppliers.map(x=>`<tr><td>${esc(x.supplier_name)}</td><td>${esc(x.phone||"")}</td><td>${esc(x.specialty||"")}</td></tr>`).join("")}</table>`);
     }
-  };
-
-  tabs.forEach(b=>b.onclick=()=>show(b.dataset.view));
-  show(initialView);
+  }
+  tabs.forEach(b=>b.onclick=()=>show(b.dataset.view));show(initialView);
 }
+
 function projects(){
   const rows=S.data.projects.map(x=>`<tr class="clickable-row v28-project-row" data-id="${x.id}"><td><strong>${esc(x.name)}</strong><br><small>${esc(x.location||'')}</small></td><td><span class="status">${esc({preparation:'Préparation',in_progress:'En cours',suspended:'Suspendu',completed:'Terminé',closed:'Clôturé'}[x.status]||x.status)}</span></td><td class="money">${cash(x.budget)}</td><td>${Number(x.locked)?'<span class="status disabled">Verrouillé</span>':'<span class="status">Déverrouillé</span>'}</td><td><div class="project-actions v28-actions"><button class="btn small secondary v28Edit" data-id="${x.id}">Modifier</button>${S.session.user.role==='admin'?`<button class="btn small secondary v28Lock" data-id="${x.id}" data-act="${Number(x.locked)?'unlock':'lock'}">${Number(x.locked)?'Déverrouiller':'Verrouiller'}</button><button class="btn small secondary v28Status" data-id="${x.id}">Statut</button><button class="btn small danger v28Delete" data-id="${x.id}">Supprimer</button>`:''}</div></td></tr>`);
   $('#content').innerHTML=`<div class="panel"><div class="panelhead"><div><h2>Projets</h2><p class="muted">Cliquez sur une ligne pour ouvrir l'espace du projet.</p></div>${S.session.user.role==='admin'?'<button id="v28NewProject" class="btn primary">+ Nouveau projet</button>':''}</div>${table(['Projet','Statut','Budget','Sécurité','Actions'],rows)}</div>`;
   $('#v28NewProject')?.addEventListener('click',()=>modal(`<h2>Nouveau projet</h2><form id="v28ProjectCreate" class="formgrid"><label>Nom<input name="name" required></label><label>Type<input name="project_type" value="Bâtiment"></label><label>Localité<input name="location"></label><label>Budget<input name="budget" type="number" min="0"></label><label>Maître d'ouvrage<input name="owner_name"></label><label>Responsable<input name="manager_name"></label><label>Date début<input name="start_date" type="date"></label><label>Date fin<input name="end_date" type="date"></label><label class="span2">Description<textarea name="description"></textarea></label><button class="btn primary span2">Créer</button></form>`));
-  document.querySelectorAll('.v28-project-row').forEach(r=>r.onclick=e=>{if(e.target.closest('button'))return;v36ProjectPage(r.dataset.id)});
+  document.querySelectorAll('.v28-project-row').forEach(r=>r.onclick=e=>{if(e.target.closest('button'))return;v38ProjectPage(r.dataset.id)});
   document.querySelectorAll('.v28Edit').forEach(b=>b.onclick=e=>{e.stopPropagation();const x=S.data.projects.find(p=>p.id===b.dataset.id);if(S.session.user.role!=='admin')return toast('Modification réservée à l’Administrateur',true);modal(`<h2>Modifier le projet</h2><form id="v28ProjectEdit" data-id="${x.id}" class="formgrid"><label>Nom<input name="name" value="${esc(x.name)}" required></label><label>Type<input name="project_type" value="${esc(x.project_type||'')}"></label><label>Localité<input name="location" value="${esc(x.location||'')}"></label><label>Budget<input name="budget" type="number" value="${Number(x.budget||0)}"></label><label>Maître d'ouvrage<input name="owner_name" value="${esc(x.owner_name||'')}"></label><label>Responsable<input name="manager_name" value="${esc(x.manager_name||'')}"></label><label>Date début<input name="start_date" type="date" value="${esc(x.start_date||'')}"></label><label>Date fin<input name="end_date" type="date" value="${esc(x.end_date||'')}"></label><label class="span2">Description<textarea name="description">${esc(x.description||'')}</textarea></label><label class="span2">Mot de passe Administrateur<input name="admin_password" type="password" required></label><button class="btn primary span2">Enregistrer</button></form>`)});
   document.querySelectorAll('.v28Lock').forEach(b=>b.onclick=e=>{e.stopPropagation();adminGate(b.dataset.act==='lock'?'Verrouiller le projet':'Déverrouiller le projet',async pw=>{await post('/api/save',{entity:'project',action:b.dataset.act,record:{id:b.dataset.id,admin_password:pw}});closeModal();await reload();projects();toast('Projet mis à jour')})});
   document.querySelectorAll('.v28Status').forEach(b=>b.onclick=e=>{e.stopPropagation();const x=S.data.projects.find(p=>p.id===b.dataset.id);modal(`<h2>Statut du projet</h2><form id="v28StatusForm" data-id="${x.id}"><label>Statut<select name="status"><option value="preparation" ${x.status==='preparation'?'selected':''}>Préparation</option><option value="in_progress" ${x.status==='in_progress'?'selected':''}>En cours</option><option value="suspended" ${x.status==='suspended'?'selected':''}>Suspendu</option><option value="completed" ${x.status==='completed'?'selected':''}>Terminé</option><option value="closed" ${x.status==='closed'?'selected':''}>Clôturé</option></select></label><button class="btn primary full">Mettre à jour</button></form>`)});
@@ -706,7 +551,7 @@ function reports(){const rows=S.data.projects.map(p=>{const mat=S.data.expenses.
 document.addEventListener('submit',async e=>{const f=e.target;try{if(f.id==='v27ProjectCreate'){e.preventDefault();await post('/api/save',{entity:'project',action:'create',record:fd(f)});closeModal();await reload();projects();toast('Projet créé')}else if(f.id==='v27ProjectEdit'){e.preventDefault();await post('/api/save',{entity:'project',action:'update',record:{id:f.dataset.id,...fd(f)}});closeModal();await reload();projects();toast('Projet modifié')}else if(f.id==='v27TradeForm'){e.preventDefault();await post('/api/save',{entity:'trade',action:'create',record:{project_id:f.dataset.project,...fd(f)}});await reload();v27ProjectTrades(f.dataset.project);toast('Métier ajouté')}else if(f.id==='v27LaborForm'){e.preventDefault();await post('/api/save',{entity:'labor',action:'create',record:{project_id:f.dataset.project,trade_id:f.dataset.trade,...fd(f)}});await reload();v27ProjectLabor(f.dataset.project,f.dataset.trade);toast("Main-d'œuvre enregistrée")}else if(f.id==='v27ExpenseForm'){e.preventDefault();await post('/api/save',{entity:'expense',action:'create',record:{project_id:f.dataset.project,...fd(f)}});await reload();v27ProjectExpenses(f.dataset.project);toast('Matériaux enregistrés')}else if(f.id==='v27SupplierForm'){e.preventDefault();await post('/api/save',{entity:'project_supplier',action:'create',record:{project_id:f.dataset.project,...fd(f)}});await reload();v27ProjectSuppliers(f.dataset.project);toast('Fournisseur affecté')}else if(f.id==='v27StatusForm'){e.preventDefault();await post('/api/save',{entity:'project',action:'set_status',record:{id:f.dataset.id,...fd(f)}});closeModal();await reload();projects();toast('Statut mis à jour')}}catch(x){toast(x.message,true)}finally{if(f.id?.startsWith('v27'))releaseForm(f)}},true);
 
 
-document.addEventListener('submit',async e=>{const f=e.target;if(!f.id?.startsWith('v28'))return;e.preventDefault();try{if(f.id==='v28ProjectCreate'){await post('/api/save',{entity:'project',action:'create',record:fd(f)});closeModal();await reload();projects();toast('Projet créé')}else if(f.id==='v28ProjectEdit'){await post('/api/save',{entity:'project',action:'update',record:{id:f.dataset.id,...fd(f)}});closeModal();await reload();projects();toast('Projet modifié')}else if(f.id==='v28StatusForm'){await post('/api/save',{entity:'project',action:'set_status',record:{id:f.dataset.id,...fd(f)}});closeModal();await reload();projects();toast('Statut mis à jour')}else if(f.id==='v28TradeForm'){await post('/api/save',{entity:'trade',action:'create',record:{project_id:f.dataset.project,...fd(f)}});await reload();closeModal();v36ProjectPage(f.dataset.project);toast('Métier ajouté')}else if(f.id==='v28ExpenseForm'){await post('/api/save',{entity:'expense',action:'create',record:{project_id:f.dataset.project,...fd(f)}});await reload();closeModal();v36ProjectPage(f.dataset.project);toast('Matériaux enregistrés')}else if(f.id==='v28SupplierForm'){await post('/api/save',{entity:'project_supplier',action:'create',record:{project_id:f.dataset.project,...fd(f)}});await reload();closeModal();v36ProjectPage(f.dataset.project);toast('Fournisseur affecté')}}catch(x){toast(x.message,true)}finally{releaseForm(f)}},true);
+document.addEventListener('submit',async e=>{const f=e.target;if(!f.id?.startsWith('v28'))return;e.preventDefault();try{if(f.id==='v28ProjectCreate'){await post('/api/save',{entity:'project',action:'create',record:fd(f)});closeModal();await reload();projects();toast('Projet créé')}else if(f.id==='v28ProjectEdit'){await post('/api/save',{entity:'project',action:'update',record:{id:f.dataset.id,...fd(f)}});closeModal();await reload();projects();toast('Projet modifié')}else if(f.id==='v28StatusForm'){await post('/api/save',{entity:'project',action:'set_status',record:{id:f.dataset.id,...fd(f)}});closeModal();await reload();projects();toast('Statut mis à jour')}else if(f.id==='v28TradeForm'){await post('/api/save',{entity:'trade',action:'create',record:{project_id:f.dataset.project,...fd(f)}});await reload();closeModal();v38ProjectPage(f.dataset.project);toast('Métier ajouté')}else if(f.id==='v28ExpenseForm'){await post('/api/save',{entity:'expense',action:'create',record:{project_id:f.dataset.project,...fd(f)}});await reload();closeModal();v38ProjectPage(f.dataset.project);toast('Matériaux enregistrés')}else if(f.id==='v28SupplierForm'){await post('/api/save',{entity:'project_supplier',action:'create',record:{project_id:f.dataset.project,...fd(f)}});await reload();closeModal();v38ProjectPage(f.dataset.project);toast('Fournisseur affecté')}}catch(x){toast(x.message,true)}finally{releaseForm(f)}},true);
 
 
 document.addEventListener("submit",async e=>{
@@ -716,16 +561,16 @@ document.addEventListener("submit",async e=>{
   try{
     if(f.id==="v29TradeForm"){
       await post("/api/save",{entity:"trade",action:"create",record:{project_id:f.dataset.project,...fd(f)}});
-      await reload();closeModal();v36ProjectPage(f.dataset.project);toast("Métier ajouté");
+      await reload();closeModal();v38ProjectPage(f.dataset.project);toast("Métier ajouté");
     }else if(f.id==="v29TradeEditForm"){
       await post("/api/save",{entity:"trade",action:"update",record:{id:f.dataset.id,project_id:f.dataset.project,...fd(f)}});
-      await reload();closeModal();v36ProjectPage(f.dataset.project);toast("Métier modifié");
+      await reload();closeModal();v38ProjectPage(f.dataset.project);toast("Métier modifié");
     }else if(f.id==="v29ExpenseForm"){
       await post("/api/save",{entity:"expense",action:"create",record:{project_id:f.dataset.project,...fd(f)}});
-      await reload();closeModal();v36ProjectPage(f.dataset.project);toast("Matériaux enregistrés");
+      await reload();closeModal();v38ProjectPage(f.dataset.project);toast("Matériaux enregistrés");
     }else if(f.id==="v29SupplierForm"){
       await post("/api/save",{entity:"project_supplier",action:"create",record:{project_id:f.dataset.project,...fd(f)}});
-      await reload();closeModal();v36ProjectPage(f.dataset.project);toast("Fournisseur affecté");
+      await reload();closeModal();v38ProjectPage(f.dataset.project);toast("Fournisseur affecté");
     }
   }catch(x){toast(x.message,true)}
   finally{releaseForm(f)}
@@ -735,10 +580,10 @@ document.addEventListener("submit",async e=>{
 document.addEventListener("submit",async e=>{
   const f=e.target;if(!f.id?.startsWith("v36"))return;e.preventDefault();
   try{
-    if(f.id==="v36TradeForm"){await post("/api/save",{entity:"trade",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"trades");toast("Métier ajouté")}
-    else if(f.id==="v36TradeEditForm"){await post("/api/save",{entity:"trade",action:"update",record:{id:f.dataset.id,project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"trades");toast("Métier modifié")}
-    else if(f.id==="v36ExpenseForm"){await post("/api/save",{entity:"expense",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"expenses");toast("Matériaux enregistrés")}
-    else if(f.id==="v36SupplierForm"){await post("/api/save",{entity:"project_supplier",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"suppliers");toast("Fournisseur affecté")}
+    if(f.id==="v36TradeForm"){await post("/api/save",{entity:"trade",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v38ProjectPage(f.dataset.project,"trades");toast("Métier ajouté")}
+    else if(f.id==="v36TradeEditForm"){await post("/api/save",{entity:"trade",action:"update",record:{id:f.dataset.id,project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v38ProjectPage(f.dataset.project,"trades");toast("Métier modifié")}
+    else if(f.id==="v36ExpenseForm"){await post("/api/save",{entity:"expense",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v38ProjectPage(f.dataset.project,"expenses");toast("Matériaux enregistrés")}
+    else if(f.id==="v36SupplierForm"){await post("/api/save",{entity:"project_supplier",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v38ProjectPage(f.dataset.project,"suppliers");toast("Fournisseur affecté")}
   }catch(x){toast(x.message,true)}
   finally{releaseForm(f)}
 },true);
@@ -752,338 +597,16 @@ document.addEventListener("click",e=>{
   if(e.target?.id==="v37PrintProjectMaterials"){const rows=(S.data.expenses||[]).filter(x=>x.project_id===pid);printA4(`Matériaux · ${p.name}`,p.location||"",`<table><tr><th>Date</th><th>Métier</th><th>Désignation</th><th>Fournisseur</th><th>Montant</th></tr>${rows.map(x=>`<tr><td>${df(x.expense_date)}</td><td>${esc(x.trade_name||"")}</td><td>${esc(x.description||"")}</td><td>${esc(x.supplier_name||"")}</td><td>${cash(x.total_price)}</td></tr>`).join("")}</table>`)}
   if(e.target?.id==="v37PrintProjectSuppliers"){const rows=(S.data.projectSuppliers||[]).filter(x=>x.project_id===pid);printA4(`Fournisseurs · ${p.name}`,p.location||"",`<table><tr><th>Fournisseur</th><th>Contact</th><th>Spécialité</th></tr>${rows.map(x=>`<tr><td>${esc(x.supplier_name||"")}</td><td>${esc(x.phone||"")}</td><td>${esc(x.specialty||"")}</td></tr>`).join("")}</table>`)}
 },true);
-document.addEventListener("submit",async e=>{const f=e.target;if(!["v37TradeForm","v37ProjectTradeForm","v37EditTradeForm"].includes(f.id))return;e.preventDefault();try{if(f.id==="v37EditTradeForm"){await post("/api/save",{entity:"trade",action:"update",record:{id:f.dataset.id,...fd(f)}});closeModal();await reload();trades();toast("Métier modifié");return}const record=fd(f);record.phase=f.dataset.resolvedPhase||record.phase;record.name=f.dataset.resolvedName||record.name;if(f.id==="v37ProjectTradeForm")record.project_id=f.dataset.project;await post("/api/save",{entity:"trade",action:"create",record});closeModal();await reload();if(f.id==="v37ProjectTradeForm")v36ProjectPage(f.dataset.project,"trades");else trades();toast("Sous-corps de métier ajouté")}catch(x){toast(x.message,true)}finally{releaseForm(f)}},true);
+document.addEventListener("submit",async e=>{const f=e.target;if(!["v37TradeForm","v37ProjectTradeForm","v37EditTradeForm"].includes(f.id))return;e.preventDefault();try{if(f.id==="v37EditTradeForm"){await post("/api/save",{entity:"trade",action:"update",record:{id:f.dataset.id,...fd(f)}});closeModal();await reload();trades();toast("Métier modifié");return}const record=fd(f);record.phase=f.dataset.resolvedPhase||record.phase;record.name=f.dataset.resolvedName||record.name;if(f.id==="v37ProjectTradeForm")record.project_id=f.dataset.project;await post("/api/save",{entity:"trade",action:"create",record});closeModal();await reload();if(f.id==="v37ProjectTradeForm")v38ProjectPage(f.dataset.project,"trades");else trades();toast("Sous-corps de métier ajouté")}catch(x){toast(x.message,true)}finally{releaseForm(f)}},true);
 
-
-/* ===== V38 BIBLIOTHÈQUE GÉNÉRALE MÉTIERS + PAGE PROJET ===== */
-
-function v38GeneralTradeForm(){
-  return `<form id="v38CatalogTradeForm">
-    <label>Corps principal
-      <select id="v38Group" required>
-        ${PROFESSIONAL_TRADE_GROUPS.map(g=>`<option value="${esc(g.key)}">${esc(g.label)}</option>`).join("")}
-      </select>
-    </label>
-    <label id="v38CustomGroupWrap" class="hidden">Autre corps principal
-      <input id="v38CustomGroup" type="text" placeholder="Précisez le corps principal">
-    </label>
-    <label id="v38ActivityWrap">Activité
-      <select id="v38Activity" required></select>
-    </label>
-    <label id="v38CustomActivityWrap" class="hidden">Autre activité
-      <input id="v38CustomActivity" type="text" placeholder="Précisez l'activité">
-    </label>
-    <button class="btn primary full" type="submit">Enregistrer le métier</button>
-  </form>`;
-}
-
-function v38InitGeneralTradeForm(root=document){
-  const group=root.querySelector("#v38Group"),activity=root.querySelector("#v38Activity"),
-    customGroupWrap=root.querySelector("#v38CustomGroupWrap"),customGroup=root.querySelector("#v38CustomGroup"),
-    activityWrap=root.querySelector("#v38ActivityWrap"),customActivityWrap=root.querySelector("#v38CustomActivityWrap"),
-    customActivity=root.querySelector("#v38CustomActivity");
-  const refresh=()=>{
-    const g=PROFESSIONAL_TRADE_GROUPS.find(x=>x.key===group.value)||PROFESSIONAL_TRADE_GROUPS[0];
-    const other=g.key==="autres";
-    customGroupWrap.classList.toggle("hidden",!other);
-    activityWrap.classList.toggle("hidden",other);
-    customActivityWrap.classList.toggle("hidden",!other);
-    if(other){activity.removeAttribute("required");return}
-    activity.setAttribute("required","");
-    activity.innerHTML=g.activities.map(([n,d])=>`<option value="${esc(n)}" data-description="${esc(d)}">${esc(n)}</option>`).join("");
-    customActivityWrap.classList.add("hidden");
-    customActivity.value="";
-  };
-  const activityChange=()=>customActivityWrap.classList.toggle("hidden",activity.value!=="Autre");
-  group.addEventListener("change",refresh);
-  activity.addEventListener("change",activityChange);
-  refresh();
-}
-
-function trades(){
-  const list=S.data.tradeCatalog||[];
-  $("#content").innerHTML=`<div class="panel">
-    <div class="panelhead">
-      <div><h2>Métiers</h2><p class="muted">Bibliothèque générale des métiers. Un métier doit être enregistré ici avant de pouvoir être affecté à un projet.</p></div>
-      <div class="toolbar"><button id="v38PrintCatalog" class="btn secondary">Imprimer / PDF</button><button id="v38AddCatalogTrade" class="btn primary">+ Ajouter un sous-corps de métier</button></div>
-    </div>
-    ${table(["Corps principal","Activité","Description activité","Actions"],list.map(x=>`<tr>
-      <td><strong>${esc(x.phase||"")}</strong></td>
-      <td>${esc(x.name)}</td>
-      <td>${esc(x.description||"")}</td>
-      <td><div class="actions">
-        <button class="btn small secondary v38EditCatalog" data-id="${x.id}">Modifier</button>
-        ${S.session.user.role==="admin"?`<button class="btn small danger v38DeleteCatalog" data-id="${x.id}">Supprimer</button>`:""}
-      </div></td>
-    </tr>`))}
-  </div>`;
-
-  $("#v38PrintCatalog").onclick=()=>printA4("Liste générale des métiers",S.session.company?.name||"",
-    `<table><tr><th>Corps principal</th><th>Activité</th><th>Description activité</th></tr>
-    ${list.map(x=>`<tr><td>${esc(x.phase||"")}</td><td>${esc(x.name)}</td><td>${esc(x.description||"")}</td></tr>`).join("")}</table>`);
-
-  $("#v38AddCatalogTrade").onclick=()=>{
-    modal(`<h2>Ajouter un sous-corps de métier</h2>${v38GeneralTradeForm()}`);
-    v38InitGeneralTradeForm($("#modalBody"));
-  };
-
-  document.querySelectorAll(".v38EditCatalog").forEach(b=>b.onclick=()=>{
-    const x=list.find(t=>t.id===b.dataset.id);if(!x)return;
-    modal(`<h2>Modifier le métier</h2><form id="v38CatalogEditForm" data-id="${x.id}">
-      <label>Corps principal<input name="phase" value="${esc(x.phase||"")}" required></label>
-      <label>Activité<input name="name" value="${esc(x.name)}" required></label>
-      <label>Description activité<textarea name="description">${esc(x.description||"")}</textarea></label>
-      <button class="btn primary full">Enregistrer</button>
-    </form>`);
-  });
-
-  document.querySelectorAll(".v38DeleteCatalog").forEach(b=>b.onclick=()=>confirmBox("Supprimer ce métier de la liste générale ?",async()=>{
-    await post("/api/save",{entity:"trade_catalog",action:"delete",record:{id:b.dataset.id}});
-    await reload();trades();toast("Métier supprimé de la liste générale");
-  }));
-}
-
-function v38ProjectPrint(title,p,columns,rows){
-  printA4(title,`${p.name} · ${p.location||""}`,
-    `<div style="margin-bottom:12px;padding:10px;border:1px solid #dce7e4;border-radius:8px">
-      <strong>${esc(p.name)}</strong> &nbsp; | &nbsp; Statut : ${esc(p.status||"")} &nbsp; | &nbsp; Budget : ${cash(p.budget)}
-    </div>
-    <table><tr>${columns.map(c=>`<th>${esc(c)}</th>`).join("")}</tr>${rows}</table>`);
-}
-
-function v36ProjectPage(projectId,initialView="trades"){
-  const p=S.data.projects.find(x=>x.id===projectId);if(!p)return;
-  S.currentProjectId=projectId;S.currentProjectView=initialView;
-  const trades=(S.data.trades||[]).filter(x=>x.project_id===projectId);
-  const catalog=S.data.tradeCatalog||[];
-  const expenses=(S.data.expenses||[]).filter(x=>x.project_id===projectId);
-  const suppliers=(S.data.projectSuppliers||[]).filter(x=>x.project_id===projectId);
-  const laborRows=(S.data.labor||[]).filter(x=>x.project_id===projectId);
-  const laborTotal=laborRows.reduce((a,x)=>a+Number(x.amount||0),0);
-  const materialTotal=expenses.reduce((a,x)=>a+Number(x.total_price||0),0);
-
-  $("#content").innerHTML=`<section class="project-page-pro">
-    <div class="project-page-toolbar"><button id="projectBack" class="btn secondary">← Retour aux projets</button><span class="eyebrow">ESPACE PROJET</span></div>
-    <div class="project-page-hero">
-      <div class="project-page-identity"><div class="project-page-icon">▥</div><div><h1>${esc(p.name)}</h1><p>⌖ ${esc(p.location||"Localité non renseignée")}</p><span class="status">${esc(p.status)}</span></div></div>
-      <div class="project-page-kpis">
-        <div class="project-page-kpi"><small>Budget</small><strong>${cash(p.budget)}</strong></div>
-        <div class="project-page-kpi gold"><small>Matériaux</small><strong>${cash(materialTotal)}</strong></div>
-        <div class="project-page-kpi blue"><small>Main-d'œuvre</small><strong>${cash(laborTotal)}</strong></div>
-      </div>
-    </div>
-    <div class="project-page-tabs">
-      <button class="project-page-tab ${initialView==="trades"?"active":""}" data-view="trades">Métiers <b>${trades.length}</b></button>
-      <button class="project-page-tab ${initialView==="materials"?"active":""}" data-view="materials">Matériaux <b>${expenses.length}</b></button>
-      <button class="project-page-tab ${initialView==="suppliers"?"active":""}" data-view="suppliers">Fournisseurs <b>${suppliers.length}</b></button>
-    </div>
-    <div id="projectPageContent" class="project-page-content"></div>
-  </section>`;
-  $("#projectBack").onclick=()=>{S.currentProjectId=null;projects()};
-  const content=$("#projectPageContent"),tabs=[...document.querySelectorAll(".project-page-tab")];
-
-  const show=view=>{
-    S.currentProjectView=view;
-    tabs.forEach(b=>b.classList.toggle("active",b.dataset.view===view));
-
-    if(view==="trades"){
-      content.innerHTML=`<div class="project-page-section-head">
-        <div><h2>Métiers du projet</h2><p>Seuls les métiers enregistrés dans la bibliothèque générale peuvent être ajoutés.</p></div>
-        <div class="toolbar"><button id="v38PrintProjectTrades" class="btn secondary">Imprimer / PDF</button><button id="v38AssignTrade" class="btn primary">+ Ajouter au projet</button></div>
-      </div>
-      <div class="project-page-card">${table(["Métier / Corps principal","Activité","Description activité","Main-d'œuvre","Actions"],trades.map(t=>{
-        const mt=laborRows.filter(l=>l.trade_id===t.id).reduce((a,x)=>a+Number(x.amount||0),0);
-        return `<tr>
-          <td><strong>${esc(t.phase||"")}</strong></td>
-          <td>${esc(t.name)}</td>
-          <td>${esc(t.description||"")}</td>
-          <td class="money">${cash(mt)}</td>
-          <td class="v38-actions-center"><button class="btn small secondary v38ModifyProjectTrade" data-id="${t.id}">Modifier</button>${S.session.user.role==="admin"?`<button class="btn small danger v38RemoveProjectTrade" data-id="${t.id}">Supprimer</button>`:""}</td>
-        </tr>`;
-      }))}</div>`;
-
-      $("#v38PrintProjectTrades").onclick=()=>v38ProjectPrint("Liste des métiers du projet",p,
-        ["Métier / Corps principal","Activité","Description activité","Main-d'œuvre"],
-        trades.map(t=>`<tr><td>${esc(t.phase||"")}</td><td>${esc(t.name)}</td><td>${esc(t.description||"")}</td><td>${cash(laborRows.filter(l=>l.trade_id===t.id).reduce((a,x)=>a+Number(x.amount||0),0))}</td></tr>`).join(""));
-
-      $("#v38AssignTrade").onclick=()=>{
-        if(!catalog.length)return toast("Aucun métier n'est enregistré dans la liste générale. Ajoutez-en d'abord depuis le menu Métiers.",true);
-        modal(`<h2>Ajouter un métier au projet</h2><form id="v38AssignTradeForm" data-project="${projectId}">
-          <label>Métier enregistré<select name="catalog_id" required>${catalog.map(x=>`<option value="${x.id}">${esc(x.phase)} — ${esc(x.name)}</option>`).join("")}</select></label>
-          <button class="btn primary full">Ajouter au projet</button>
-        </form>`);
-      };
-
-      document.querySelectorAll(".v38ModifyProjectTrade").forEach(b=>b.onclick=()=>{
-        const t=trades.find(x=>x.id===b.dataset.id);if(!t)return;
-        modal(`<h2>Modifier le métier du projet</h2><form id="v38UpdateProjectTradeForm" data-id="${t.id}" data-project="${projectId}">
-          <label>Métier enregistré<select name="catalog_id" required>${catalog.map(x=>`<option value="${x.id}" ${x.id===t.catalog_id?"selected":""}>${esc(x.phase)} — ${esc(x.name)}</option>`).join("")}</select></label>
-          <button class="btn primary full">Enregistrer</button>
-        </form>`);
-      });
-
-      document.querySelectorAll(".v38RemoveProjectTrade").forEach(b=>b.onclick=()=>confirmBox("Retirer ce métier du projet ?",async()=>{
-        await post("/api/save",{entity:"trade",action:"delete",record:{id:b.dataset.id}});
-        await reload();v36ProjectPage(projectId,"trades");toast("Métier retiré du projet");
-      }));
-    }
-
-    if(view==="materials"){
-      content.innerHTML=`<div class="project-page-section-head">
-        <div><h2>Matériaux du projet</h2><p>Recherche par métier, date ou fournisseur.</p></div>
-        <div class="toolbar"><button id="v38PrintMaterials" class="btn secondary">Imprimer / PDF</button><button id="v38AddMaterial" class="btn primary">+ Ajouter des matériaux</button></div>
-      </div>
-      <div class="v38-searchbar"><input id="v38MaterialSearch" type="search" placeholder="Rechercher par métier, activité, date ou fournisseur..."></div>
-      <div id="v38MaterialsTable" class="project-page-card"></div>`;
-
-      const renderMaterials=()=>{
-        const q=($("#v38MaterialSearch")?.value||"").trim().toLowerCase();
-        const filtered=expenses.filter(x=>{
-          const t=trades.find(z=>z.id===x.trade_id);
-          const hay=[x.expense_date,t?.phase,t?.name,x.description,x.supplier_name].join(" ").toLowerCase();
-          return !q||hay.includes(q);
-        });
-        $("#v38MaterialsTable").innerHTML=table(
-          ["Date","Métier / Corps principal","Activité","Désignation","Fournisseur","Quantité","Prix unitaire","Prix total","Actions"],
-          filtered.map(x=>{
-            const t=trades.find(z=>z.id===x.trade_id);
-            return `<tr>
-              <td>${df(x.expense_date)}</td>
-              <td><strong>${esc(t?.phase||"—")}</strong></td>
-              <td>${esc(t?.name||"—")}</td>
-              <td>${esc(x.description||"")}</td>
-              <td>${esc(x.supplier_name||"—")}</td>
-              <td class="money">${Number(x.quantity||0)} ${esc(x.unit||"")}</td>
-              <td class="money">${cash(x.unit_price)}</td>
-              <td class="money"><strong>${cash(x.total_price)}</strong></td>
-              <td class="v38-actions-center"><button class="btn small secondary v38EditMaterial" data-id="${x.id}">Modifier</button>${S.session.user.role==="admin"?`<button class="btn small danger v38DeleteMaterial" data-id="${x.id}">Supprimer</button>`:""}</td>
-            </tr>`;
-          })
-        );
-
-        document.querySelectorAll(".v38EditMaterial").forEach(b=>b.onclick=()=>{
-          const x=expenses.find(e=>e.id===b.dataset.id);if(!x)return;
-          modal(`<h2>Modifier les matériaux</h2><form id="v38MaterialEditForm" data-id="${x.id}" data-project="${projectId}">
-            <label>Métier<select name="trade_id">${trades.map(t=>`<option value="${t.id}" ${t.id===x.trade_id?"selected":""}>${esc(t.phase)} — ${esc(t.name)}</option>`).join("")}</select></label>
-            <label>Fournisseur<select name="supplier_id"><option value="">— Aucun —</option>${(S.data.suppliers||[]).map(s=>`<option value="${s.id}" ${s.id===x.supplier_id?"selected":""}>${esc(s.name)}</option>`).join("")}</select></label>
-            <label>Date<input name="expense_date" type="date" value="${esc(x.expense_date||"")}"></label>
-            <label>Désignation<input name="description" value="${esc(x.description||"")}" required></label>
-            <label>Quantité<input name="quantity" type="number" step=".01" value="${Number(x.quantity||0)}"></label>
-            <label>Unité<input name="unit" value="${esc(x.unit||"")}"></label>
-            <label>Prix unitaire<input name="unit_price" type="number" min="0" value="${Number(x.unit_price||0)}"></label>
-            <label>Référence<input name="reference" value="${esc(x.reference||"")}"></label>
-            <label>Notes<textarea name="notes">${esc(x.notes||"")}</textarea></label>
-            <button class="btn primary full">Enregistrer</button>
-          </form>`);
-        });
-        document.querySelectorAll(".v38DeleteMaterial").forEach(b=>b.onclick=()=>confirmBox("Supprimer ces matériaux ?",async()=>{
-          await post("/api/save",{entity:"expense",action:"delete",record:{id:b.dataset.id}});
-          await reload();v36ProjectPage(projectId,"materials");toast("Matériaux supprimés");
-        }));
-      };
-      renderMaterials();
-      $("#v38MaterialSearch").addEventListener("input",renderMaterials);
-
-      $("#v38PrintMaterials").onclick=()=>{
-        const q=($("#v38MaterialSearch")?.value||"").trim().toLowerCase();
-        const filtered=expenses.filter(x=>{
-          const t=trades.find(z=>z.id===x.trade_id);
-          return !q||[x.expense_date,t?.phase,t?.name,x.description,x.supplier_name].join(" ").toLowerCase().includes(q);
-        });
-        v38ProjectPrint("Liste des matériaux du projet",p,
-          ["Date","Métier / Corps principal","Activité","Désignation","Fournisseur","Quantité","Prix unitaire","Prix total"],
-          filtered.map(x=>{const t=trades.find(z=>z.id===x.trade_id);return `<tr><td>${df(x.expense_date)}</td><td>${esc(t?.phase||"")}</td><td>${esc(t?.name||"")}</td><td>${esc(x.description||"")}</td><td>${esc(x.supplier_name||"")}</td><td>${Number(x.quantity||0)} ${esc(x.unit||"")}</td><td>${cash(x.unit_price)}</td><td>${cash(x.total_price)}</td></tr>`}).join(""));
-      };
-
-      $("#v38AddMaterial").onclick=()=>{
-        if(!trades.length)return toast("Ajoutez d'abord un métier enregistré au projet.",true);
-        modal(`<h2>Ajouter des matériaux</h2><form id="v38MaterialForm" data-project="${projectId}">
-          <label>Métier<select name="trade_id" required>${trades.map(t=>`<option value="${t.id}">${esc(t.phase)} — ${esc(t.name)}</option>`).join("")}</select></label>
-          <label>Fournisseur<select name="supplier_id"><option value="">— Aucun —</option>${(S.data.suppliers||[]).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></label>
-          <label>Date<input name="expense_date" type="date" value="${new Date().toISOString().slice(0,10)}"></label>
-          <label>Désignation<input name="description" required></label>
-          <label>Quantité<input name="quantity" type="number" step=".01" value="1"></label>
-          <label>Unité<input name="unit"></label>
-          <label>Prix unitaire<input name="unit_price" type="number" min="0"></label>
-          <label>Référence<input name="reference"></label>
-          <label>Notes<textarea name="notes"></textarea></label>
-          <button class="btn primary full">Enregistrer</button>
-        </form>`);
-      };
-    }
-
-    if(view==="suppliers"){
-      content.innerHTML=`<div class="project-page-section-head">
-        <div><h2>Fournisseurs du projet</h2><p>Les fournisseurs doivent être enregistrés dans la liste générale avant affectation.</p></div>
-        <div class="toolbar"><button id="v38PrintProjectSuppliers" class="btn secondary">Imprimer / PDF</button><button id="v38AddSupplier" class="btn primary">+ Affecter un fournisseur</button></div>
-      </div>
-      <div class="project-page-card">${table(["Fournisseur","Contact","Spécialité","Matériaux","Actions"],suppliers.map(x=>{
-        const spent=expenses.filter(e=>e.supplier_id===x.supplier_id).reduce((a,e)=>a+Number(e.total_price||0),0);
-        return `<tr><td><strong>${esc(x.supplier_name)}</strong></td><td>${esc(x.phone||"—")}</td><td>${esc(x.specialty||"—")}</td><td class="money">${cash(spent)}</td><td class="v38-actions-center">${S.session.user.role==="admin"?`<button class="btn small danger v38RemoveSupplier" data-id="${x.id}">Supprimer</button>`:""}</td></tr>`;
-      }))}</div>`;
-
-      $("#v38PrintProjectSuppliers").onclick=()=>v38ProjectPrint("Liste des fournisseurs du projet",p,
-        ["Fournisseur","Contact","Spécialité","Matériaux"],
-        suppliers.map(x=>`<tr><td>${esc(x.supplier_name)}</td><td>${esc(x.phone||"")}</td><td>${esc(x.specialty||"")}</td><td>${cash(expenses.filter(e=>e.supplier_id===x.supplier_id).reduce((a,e)=>a+Number(e.total_price||0),0))}</td></tr>`).join(""));
-
-      $("#v38AddSupplier").onclick=()=>modal(`<h2>Affecter un fournisseur</h2><form id="v38SupplierAssignForm" data-project="${projectId}">
-        <label>Fournisseur<select name="supplier_id" required>${(S.data.suppliers||[]).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></label>
-        <label>Notes<textarea name="notes"></textarea></label><button class="btn primary full">Affecter</button>
-      </form>`);
-
-      document.querySelectorAll(".v38RemoveSupplier").forEach(b=>b.onclick=()=>confirmBox("Retirer ce fournisseur du projet ?",async()=>{
-        await post("/api/save",{entity:"project_supplier",action:"delete",record:{id:b.dataset.id,project_id:projectId}});
-        await reload();v36ProjectPage(projectId,"suppliers");toast("Fournisseur retiré du projet");
-      }));
-    }
-  };
-
-  tabs.forEach(b=>b.onclick=()=>show(b.dataset.view));
-  show(initialView==="expenses"?"materials":initialView);
-}
-
-document.addEventListener("submit",async e=>{
-  const f=e.target;
-  if(!["v38CatalogTradeForm","v38CatalogEditForm","v38AssignTradeForm","v38UpdateProjectTradeForm","v38MaterialForm","v38MaterialEditForm","v38SupplierAssignForm"].includes(f.id))return;
-  e.preventDefault();
-  try{
-    if(f.id==="v38CatalogTradeForm"){
-      const group=$("#v38Group"),activity=$("#v38Activity"),g=PROFESSIONAL_TRADE_GROUPS.find(x=>x.key===group.value);
-      let phase,name,description="";
-      if(group.value==="autres"){phase=$("#v38CustomGroup").value.trim();name=$("#v38CustomActivity").value.trim()}
-      else if(activity.value==="Autre"){phase=g.label;name=$("#v38CustomActivity").value.trim()}
-      else{phase=g.label;name=activity.value;description=activity.selectedOptions[0]?.dataset.description||""}
-      if(!phase||!name)throw new Error("Renseignez le corps principal et l'activité.");
-      await post("/api/save",{entity:"trade_catalog",action:"create",record:{phase,name,description}});
-      closeModal();await reload();trades();toast("Métier enregistré dans la liste générale");
-    }
-    if(f.id==="v38CatalogEditForm"){
-      await post("/api/save",{entity:"trade_catalog",action:"update",record:{id:f.dataset.id,...fd(f)}});
-      closeModal();await reload();trades();toast("Métier modifié");
-    }
-    if(f.id==="v38AssignTradeForm"){
-      await post("/api/save",{entity:"trade",action:"create",record:{project_id:f.dataset.project,catalog_id:f.catalog_id.value}});
-      closeModal();await reload();v36ProjectPage(f.dataset.project,"trades");toast("Métier ajouté au projet");
-    }
-    if(f.id==="v38UpdateProjectTradeForm"){
-      await post("/api/save",{entity:"trade",action:"update",record:{id:f.dataset.id,catalog_id:f.catalog_id.value}});
-      closeModal();await reload();v36ProjectPage(f.dataset.project,"trades");toast("Métier du projet modifié");
-    }
-    if(f.id==="v38MaterialForm"){
-      await post("/api/save",{entity:"expense",action:"create",record:{project_id:f.dataset.project,...fd(f)}});
-      closeModal();await reload();v36ProjectPage(f.dataset.project,"materials");toast("Matériaux enregistrés");
-    }
-    if(f.id==="v38MaterialEditForm"){
-      await post("/api/save",{entity:"expense",action:"update",record:{id:f.dataset.id,...fd(f)}});
-      closeModal();await reload();v36ProjectPage(f.dataset.project,"materials");toast("Matériaux modifiés");
-    }
-    if(f.id==="v38SupplierAssignForm"){
-      await post("/api/save",{entity:"project_supplier",action:"create",record:{project_id:f.dataset.project,...fd(f)}});
-      closeModal();await reload();v36ProjectPage(f.dataset.project,"suppliers");toast("Fournisseur affecté");
-    }
-  }catch(x){toast(x.message,true)}
-  finally{releaseForm(f)}
-},true);
+document.addEventListener("submit",async e=>{const f=e.target;if(!f.id?.startsWith("v38"))return;e.preventDefault();try{
+  if(f.id==="v38TradeCatalogForm"){const g=PROFESSIONAL_TRADE_GROUPS.find(x=>x.key===$("#v38TradeGroup").value);let mg=g?.label||"",act=$("#v38Activity")?.value||"";if($("#v38TradeGroup").value==="autres"){mg=$("#v38OtherGroup").value.trim();act=$("#v38OtherActivity").value.trim()}else if(act==="Autre")act=$("#v38OtherActivity").value.trim();await post("/api/save",{entity:"trade_catalog",action:"create",record:{main_group:mg,activity:act}});closeModal();await reload();trades();toast("Métier ajouté")}
+  else if(f.id==="v38TradeCatalogEditForm"){await post("/api/save",{entity:"trade_catalog",action:"update",record:{id:f.dataset.id,...fd(f)}});closeModal();await reload();trades();toast("Métier modifié")}
+  else if(f.id==="v38ProjectTradeForm"){await post("/api/save",{entity:"project_trade",action:"create",record:{project_id:f.dataset.project,trade_catalog_id:f.trade_catalog_id.value}});closeModal();await reload();v38ProjectPage(f.dataset.project,"trades");toast("Métier ajouté au projet")}
+  else if(f.id==="v38MaterialForm"){await post("/api/save",{entity:"expense",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v38ProjectPage(f.dataset.project,"expenses");toast("Matériaux ajoutés")}
+  else if(f.id==="v38MaterialEditForm"){await post("/api/save",{entity:"expense",action:"update",record:{id:f.dataset.id,project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v38ProjectPage(f.dataset.project,"expenses");toast("Matériaux modifiés")}
+  else if(f.id==="v38ProjectSupplierForm"){await post("/api/save",{entity:"project_supplier",action:"create",record:{project_id:f.dataset.project,supplier_id:f.supplier_id.value}});closeModal();await reload();v38ProjectPage(f.dataset.project,"suppliers");toast("Fournisseur affecté")}
+}catch(x){toast(x.message,true)}finally{releaseForm(f)}},true);
 
 init();
 
