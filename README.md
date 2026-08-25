@@ -99,3 +99,7 @@ Au premier chargement, `POST /api/bootstrap` crée ou répare le Super Admin si 
 
 ## V11 — Bootstrap stable
 Le Super Admin est créé/réparé avant la migration non bloquante des anciens identifiants. `/api/health` affiche `app_version`, `superadmin_ready` et `superadmin_credential_ready`.
+
+
+## V12 — Correction user_credentials
+Réparation automatique de la table `user_credentials`. `setCredential()` utilise maintenant DELETE + INSERT + vérification, sans UPSERT. `/api/health` expose `credential_table_ready`.
