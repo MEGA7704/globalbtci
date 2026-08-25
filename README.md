@@ -204,3 +204,15 @@ Correction définitive de `credential_insert`.
 
 Cette version ne dépend plus des tables `user_credentials`, `auth_credentials_v2`
 ou `member_credentials_v3` pour créer un nouvel Administrateur.
+
+
+## V19 — Correction Cloudflare `outcome: canceled`
+
+La réparation complète du schéma D1 n'est plus exécutée dans `/api/register`,
+`/api/load` ni `/api/save`.
+
+Elle est exécutée au bootstrap puis mémorisée dans KV sous
+`schema:global-bt:v19`.
+
+L'inscription prépare aussi le hash du mot de passe avant les écritures D1,
+puis stocke le credential membre dans KV.

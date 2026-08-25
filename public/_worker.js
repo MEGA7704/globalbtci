@@ -20,18 +20,18 @@ async function safeEq(a,b){const x=new Uint8Array(await crypto.subtle.digest("SH
 async function kvCredentialKey(userId){
   return `cred:v1:${userId}`;
 }
-async function setMemberCredentialKV(env,userId,password){
+async function makeMemberCredential(password){
   const p=String(password||"");
   if(p.length<12)throw new Error("PASSWORD_TOO_SHORT");
   const salt=b64(bytes(16));
   const hash=await hashPassword(p,salt,ITER);
-  const key=await kvCredentialKey(userId);
-  await env.GLOBAL_BT_KV.put(key,JSON.stringify({
-    password_hash:hash,
-    password_salt:salt,
-    password_iterations:ITER,
-    updated_at:now()
-  }));
+  return {password_hash:hash,password_salt:salt,password_iterations:ITER,updated_at:now()};
+}
+async function putMemberCredentialKV(env,userId,credential){
+  await env.GLOBAL_BT_KV.put(await kvCredentialKey(userId),JSON.stringify(credential));
+}
+async function setMemberCredentialKV(env,userId,password){
+  await putMemberCredentialKV(env,userId,await makeMemberCredential(password));
 }
 async function getMemberCredentialKV(env,userId){
   const key=await kvCredentialKey(userId);
@@ -184,6 +184,17 @@ async function ensureSchema(env){
   await ensureColumn(env,"audit_logs","created_at","TEXT");
 
 }
+const SCHEMA_READY_KEY="schema:global-bt:v19";
+async function markSchemaReady(env){await env.GLOBAL_BT_KV.put(SCHEMA_READY_KEY,"1")}
+async function requireSchemaReady(env){
+  if((await env.GLOBAL_BT_KV.get(SCHEMA_READY_KEY))==="1")return true;
+  const r=await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('companies','users','projects','expenses')").all();
+  const names=new Set((r.results||[]).map(x=>x.name));
+  const ok=["companies","users","projects","expenses"].every(x=>names.has(x));
+  if(ok)await markSchemaReady(env);
+  return ok;
+}
+
 async function migrateLegacyCredentials(env){
   const c=await columns(env,"users");
   if(!(c.has("password_hash")&&c.has("password_salt")))return;
@@ -372,6 +383,7 @@ async function bootstrap(req,env){
 
     stage="schema";
     await ensureSchema(env);
+    await markSchemaReady(env);
     const em=email(env.SUPERADMIN_EMAIL);
 
     stage="lookup";
@@ -395,11 +407,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"18.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"19.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"18.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"19.0.0"},500);
   }
 }
 async function login(req,env){
@@ -479,7 +491,7 @@ async function register(req,env){
   let cid=null,uid=null;
   try{
     stage="schema";
-    await ensureSchema(env);
+    if(!await requireSchemaReady(env))return json({error:"Base non initialisée",stage,code:"SCHEMA_NOT_READY"},503);
 
     stage="input";
     const b=await body(req);
@@ -505,6 +517,9 @@ async function register(req,env){
     const startDate=now();
     const endDate=plusDays(21);
 
+    stage="credential_prepare";
+    const preparedCredential=await makeMemberCredential(pw);
+
     stage="company_insert";
     await insertCompanyProfile(env,{
       id:cid,
@@ -528,8 +543,8 @@ async function register(req,env){
       must_change_password:false
     });
 
-    stage="credential_insert";
-    await setMemberCredentialKV(env,uid,pw);
+    stage="credential_store";
+    await putMemberCredentialKV(env,uid,preparedCredential);
 
     stage="session";
     const u=await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(uid).first();
@@ -593,7 +608,7 @@ async function logout(req,env){const a=await auth(req,env,null,true);if(!a.error
 
 async function load(req,env){
   const a=await auth(req,env);if(a.error)return a.error;const s=a.s;
-  try{await ensureSchema(env)}catch(e){console.error(JSON.stringify({event:"load_schema_error",message:e?.message||String(e)}));return json({error:"Mise à niveau de la base impossible",code:"SCHEMA_REPAIR_FAILED"},500)}
+  if(!await requireSchemaReady(env))return json({error:"Base non initialisée",code:"SCHEMA_NOT_READY"},503);
   if(s.u.role==="superadmin"){
     const [companies,users,resets,logs]=await Promise.all([
       env.DB.prepare("SELECT id,name,city,plan,plan_started_at,plan_expires_at,status,created_at FROM companies WHERE status!='deleted' ORDER BY created_at DESC").all(),
@@ -633,7 +648,7 @@ async function save(req,env){
   const a=await auth(req,env,null,true);if(a.error)return a.error;
   const s=a.s,b=await body(req),entity=b.entity,action=b.action||"create",r=b.record||{};
   try{
-    await ensureSchema(env);
+    if(!await requireSchemaReady(env))return json({error:"Base non initialisée",code:"SCHEMA_NOT_READY"},503);
     if(s.u.role==="superadmin")return await saveSuper(req,env,s,entity,action,r);
     return await saveCompany(req,env,s,entity,action,r);
   }catch(e){
@@ -734,7 +749,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"18.0.0",
+    app_version:"19.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,
@@ -744,7 +759,7 @@ async function health(req,env){
     superadmin_ready:superadmin,
     superadmin_credential_ready:superadmin&&secretReady,
     superadmin_auth:"cloudflare_secret",
-    member_auth_store:"GLOBAL_BT_KV / cred:v1:<user_id>",schema_repair_version:"18"
+    member_auth_store:"GLOBAL_BT_KV / cred:v1:<user_id>",schema_repair_version:"19"
   });
 }
 
