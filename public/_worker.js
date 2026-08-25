@@ -21,7 +21,11 @@ function isoDate(v){const s=String(v||"");return /^\d{4}-\d{2}-\d{2}$/.test(s)?s
 function nowIso(){return new Date().toISOString()}
 function addDays(days){const d=new Date();d.setUTCDate(d.getUTCDate()+days);return d.toISOString()}
 function toB64(bytes){return btoa(String.fromCharCode(...bytes))}
-function fromB64(s){return Uint8Array.from(atob(s),c=>c.charCodeAt(0))}
+function fromB64(s){
+  let v=String(s||"").replaceAll("-","+").replaceAll("_","/");
+  while(v.length%4)v+="=";
+  return Uint8Array.from(atob(v),c=>c.charCodeAt(0));
+}
 function randomToken(n=32){const a=new Uint8Array(n);crypto.getRandomValues(a);return toB64(a).replaceAll("+","-").replaceAll("/","_").replaceAll("=","")}
 async function digestText(v){const h=await crypto.subtle.digest("SHA-256",enc.encode(v));return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,"0")).join("")}
 async function sessionKey(env,token){return "sess:"+await digestText(`${token}:${env.SESSION_PEPPER||""}`)}
@@ -431,6 +435,8 @@ async function bootstrap(req,env){
     else if(msg.includes("UNIQUE constraint"))code="EMAIL_CONFLICT";
     else if(msg.includes("NOT NULL constraint"))code="LEGACY_SCHEMA_REQUIRED";
     else if(msg.includes("no such table"))code="SCHEMA_MISSING";
+    else if(msg.includes("InvalidCharacterError")||msg.includes("atob")||msg.includes("base64"))code="BASE64_DECODE_ERROR";
+    else if(msg.includes("PBKDF2")||msg.includes("deriveBits"))code="PASSWORD_HASH_ERROR";
 
     return response({
       error:"Initialisation Super Admin impossible",

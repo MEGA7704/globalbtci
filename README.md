@@ -153,3 +153,16 @@ Après déploiement :
 2. ouvrir `/api/bootstrap-status`;
 3. ouvrir la page d'accueil pour déclencher `POST /api/bootstrap`;
 4. si nécessaire, recharger `/api/bootstrap-status`.
+
+
+## V6 — Correction Base64 / hash du Super Admin
+
+Cause corrigée :
+`randomToken()` produit des chaînes Base64 URL-safe (`-`, `_`) sans padding `=`.
+L'ancien `fromB64()` utilisait directement `atob()`, qui attend du Base64 classique.
+
+La V6 :
+- reconvertit `-` en `+` et `_` en `/`;
+- restaure automatiquement le padding `=`;
+- permet à PBKDF2 de décoder correctement le sel;
+- ajoute les diagnostics `BASE64_DECODE_ERROR` et `PASSWORD_HASH_ERROR`.
