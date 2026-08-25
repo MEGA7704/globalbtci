@@ -147,6 +147,7 @@ async function ensureSchema(env){
   await ensureColumn(env,"trades","phase","TEXT");
   await ensureColumn(env,"trades","description","TEXT");
   await ensureColumn(env,"trades","created_at","TEXT");
+  await ensureColumn(env,"trades","created_by","TEXT");
 
   await ensureColumn(env,"suppliers","phone","TEXT");
   await ensureColumn(env,"suppliers","email","TEXT");
@@ -209,15 +210,81 @@ async function ensureSchema(env){
 
 
 }
-const SCHEMA_READY_KEY="schema:global-bt:v19";
+
+async function ensureV39Schema(env){
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS trade_catalog(
+    id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL,
+    main_group TEXT NOT NULL,
+    activity TEXT NOT NULL,
+    activity_description TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(company_id,main_group,activity)
+  )`).run();
+
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS project_trades(
+    id TEXT PRIMARY KEY,
+    company_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    trade_catalog_id TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(company_id,project_id,trade_catalog_id)
+  )`).run();
+
+  // Compatibilité avec les anciennes tables métiers.
+  const tradeCols=await columns(env,"trades");
+  if(!tradeCols.has("created_by")){
+    try{await env.DB.prepare("ALTER TABLE trades ADD COLUMN created_by TEXT").run()}catch{}
+  }
+  if(!tradeCols.has("phase")){
+    try{await env.DB.prepare("ALTER TABLE trades ADD COLUMN phase TEXT").run()}catch{}
+  }
+  if(!tradeCols.has("description")){
+    try{await env.DB.prepare("ALTER TABLE trades ADD COLUMN description TEXT").run()}catch{}
+  }
+
+  // Importer les anciens métiers dans le nouveau référentiel sans supprimer l'ancien stockage.
+  try{
+    await env.DB.prepare(`INSERT OR IGNORE INTO trade_catalog
+      (id,company_id,main_group,activity,activity_description,created_by,created_at)
+      SELECT id,company_id,
+        COALESCE(NULLIF(TRIM(phase),''),'Autres'),
+        name,
+        description,
+        created_by,
+        COALESCE(created_at,CURRENT_TIMESTAMP)
+      FROM trades`).run();
+
+    await env.DB.prepare(`INSERT OR IGNORE INTO project_trades
+      (id,company_id,project_id,trade_catalog_id,created_at)
+      SELECT 'pt_'||id,company_id,project_id,id,COALESCE(created_at,CURRENT_TIMESTAMP)
+      FROM trades`).run();
+  }catch(e){
+    console.error(JSON.stringify({
+      event:"v39_trade_migration_warning",
+      message:e?.message||String(e)
+    }));
+  }
+}
+
+const SCHEMA_READY_KEY="schema:global-bt:v39";
 async function markSchemaReady(env){await env.GLOBAL_BT_KV.put(SCHEMA_READY_KEY,"1")}
 async function requireSchemaReady(env){
   if((await env.GLOBAL_BT_KV.get(SCHEMA_READY_KEY))==="1")return true;
-  const r=await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('companies','users','projects','expenses')").all();
-  const names=new Set((r.results||[]).map(x=>x.name));
-  const ok=["companies","users","projects","expenses"].every(x=>names.has(x));
-  if(ok)await markSchemaReady(env);
-  return ok;
+  try{
+    await ensureV39Schema(env);
+    await markSchemaReady(env);
+    return true;
+  }catch(e){
+    console.error(JSON.stringify({
+      event:"v39_schema_upgrade_error",
+      message:e?.message||String(e),
+      stack:e?.stack||""
+    }));
+    return false;
+  }
 }
 
 async function migrateLegacyCredentials(env){
@@ -467,11 +534,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"38.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"39.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"38.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"39.0.0"},500);
   }
 }
 async function login(req,env){
@@ -958,7 +1025,7 @@ async function cryptoHealth(req,env){
     const test=await makeMemberCredential("GlobalBT-Test-2026!");
     return json({
       ok:true,
-      app_version:"38.0.0",
+      app_version:"39.0.0",
       algorithm:"PBKDF2-SHA-256",
       iterations:test.password_iterations,
       elapsed_ms:Date.now()-started
@@ -966,7 +1033,7 @@ async function cryptoHealth(req,env){
   }catch(e){
     return json({
       ok:false,
-      app_version:"38.0.0",
+      app_version:"39.0.0",
       code:e?.message||"PASSWORD_HASH_FAILED",
       elapsed_ms:Date.now()-started
     },500);
@@ -1000,7 +1067,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"38.0.0",
+    app_version:"39.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,
@@ -1010,7 +1077,7 @@ async function health(req,env){
     superadmin_ready:superadmin,
     superadmin_credential_ready:superadmin&&secretReady,
     superadmin_auth:"cloudflare_secret",
-    member_auth_store:"GLOBAL_BT_KV / cred:v1:<user_id>",schema_repair_version:"21"
+    member_auth_store:"GLOBAL_BT_KV / cred:v1:<user_id>",v39_schema_key:SCHEMA_READY_KEY,schema_repair_version:"21"
   });
 }
 
