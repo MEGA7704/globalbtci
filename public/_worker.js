@@ -25,24 +25,12 @@ async function body(req){try{return await req.json()}catch{return {}}}
 async function tableInfo(env,t){const r=await env.DB.prepare(`PRAGMA table_info(${t})`).all();return r.results||[]}
 async function columns(env,t){return new Set((await tableInfo(env,t)).map(x=>x.name))}
 async function ensureColumn(env,t,n,def){const c=await columns(env,t);if(!c.has(n))await env.DB.prepare(`ALTER TABLE ${t} ADD COLUMN ${n} ${def}`).run()}
-async function ensureCredentialSchema(env){
-  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS user_credentials(
-    user_id TEXT PRIMARY KEY,
-    password_hash TEXT NOT NULL,
-    password_salt TEXT NOT NULL,
-    password_iterations INTEGER NOT NULL DEFAULT 210000,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`).run();
-  await ensureColumn(env,"user_credentials","password_hash","TEXT");
-  await ensureColumn(env,"user_credentials","password_salt","TEXT");
-  await ensureColumn(env,"user_credentials","password_iterations","INTEGER NOT NULL DEFAULT 210000");
-  await ensureColumn(env,"user_credentials","updated_at","TEXT");
-}
 async function ensureSchema(env){
   const sql=[
 `CREATE TABLE IF NOT EXISTS companies(id TEXT PRIMARY KEY,name TEXT NOT NULL,code TEXT,phone TEXT,email TEXT,city TEXT,address TEXT,plan TEXT NOT NULL DEFAULT 'free',plan_started_at TEXT NOT NULL,plan_expires_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 `CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,company_id TEXT,email TEXT NOT NULL COLLATE NOCASE UNIQUE,full_name TEXT NOT NULL,phone TEXT,role TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',password_version INTEGER NOT NULL DEFAULT 1,must_change_password INTEGER NOT NULL DEFAULT 0,created_by TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 `CREATE TABLE IF NOT EXISTS user_credentials(user_id TEXT PRIMARY KEY,password_hash TEXT NOT NULL,password_salt TEXT NOT NULL,password_iterations INTEGER NOT NULL DEFAULT 210000,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+`CREATE TABLE IF NOT EXISTS auth_credentials_v2(user_id TEXT PRIMARY KEY,password_hash TEXT NOT NULL,password_salt TEXT NOT NULL,password_iterations INTEGER NOT NULL DEFAULT 210000,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`, 
 `CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,company_id TEXT NOT NULL,name TEXT NOT NULL,project_type TEXT,location TEXT,owner_name TEXT,manager_name TEXT,budget INTEGER NOT NULL DEFAULT 0,start_date TEXT,end_date TEXT,status TEXT NOT NULL DEFAULT 'in_progress',description TEXT,created_by TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 `CREATE TABLE IF NOT EXISTS trades(id TEXT PRIMARY KEY,company_id TEXT NOT NULL,project_id TEXT NOT NULL,name TEXT NOT NULL,description TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 `CREATE TABLE IF NOT EXISTS suppliers(id TEXT PRIMARY KEY,company_id TEXT NOT NULL,name TEXT NOT NULL,phone TEXT,email TEXT,city TEXT,address TEXT,specialty TEXT,notes TEXT,created_by TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
@@ -53,7 +41,6 @@ async function ensureSchema(env){
 `CREATE TABLE IF NOT EXISTS app_meta(key TEXT PRIMARY KEY,value TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`
   ];
   for(const s of sql)await env.DB.prepare(s).run();
-  await ensureCredentialSchema(env);
 
   // Compatibilité avec les anciennes versions de la table users.
   await ensureColumn(env,"users","phone","TEXT");
@@ -85,28 +72,44 @@ async function insertUserProfile(env,u){
   await env.DB.prepare(`INSERT INTO users(${names.join(",")}) VALUES(${qs.join(",")})`).bind(...vals).run();
 }
 async function setCredential(env,userId,password){
-  const pwd=String(password||"");
-  if(pwd.length<12)throw new Error("PASSWORD_TOO_SHORT");
-  await ensureCredentialSchema(env);
-
-  const salt=b64(bytes(16));
-  const hash=await hashPassword(pwd,salt);
-
-  // Écriture volontairement simple et compatible avec D1 :
-  // pas d'UPSERT dépendant d'un ancien schéma.
-  await env.DB.prepare("DELETE FROM user_credentials WHERE user_id=?").bind(userId).run();
-  await env.DB.prepare(`INSERT INTO user_credentials(
-    user_id,password_hash,password_salt,password_iterations,updated_at
-  ) VALUES(?,?,?,?,CURRENT_TIMESTAMP)`)
+  if(String(password).length<12)throw new Error("PASSWORD_TOO_SHORT");
+  const salt=b64(bytes(16)),hash=await hashPassword(String(password),salt);
+  await env.DB.prepare(`INSERT INTO user_credentials(user_id,password_hash,password_salt,password_iterations,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP)
+    ON CONFLICT(user_id) DO UPDATE SET password_hash=excluded.password_hash,password_salt=excluded.password_salt,password_iterations=excluded.password_iterations,updated_at=CURRENT_TIMESTAMP`)
     .bind(userId,hash,salt,ITER).run();
-
-  const check=await env.DB.prepare(
-    "SELECT user_id FROM user_credentials WHERE user_id=?"
-  ).bind(userId).first();
-
-  if(!check)throw new Error("CREDENTIAL_INSERT_VERIFY_FAILED");
 }
+async function setCredentialV2(env,userId,password){
+  if(String(password).length<12)throw new Error("PASSWORD_TOO_SHORT");
+  const salt=b64(bytes(16));
+  const hash=await hashPassword(String(password),salt);
+  await env.DB.prepare(`INSERT INTO auth_credentials_v2(user_id,password_hash,password_salt,password_iterations,updated_at)
+    VALUES(?,?,?,?,CURRENT_TIMESTAMP)
+    ON CONFLICT(user_id) DO UPDATE SET
+      password_hash=excluded.password_hash,
+      password_salt=excluded.password_salt,
+      password_iterations=excluded.password_iterations,
+      updated_at=CURRENT_TIMESTAMP`)
+    .bind(userId,hash,salt,ITER).run();
+}
+async function getCredentialV2(env,userId){
+  let cr=await env.DB.prepare("SELECT * FROM auth_credentials_v2 WHERE user_id=?").bind(userId).first();
+  if(cr)return cr;
 
+  // Compatibilité : recopier un ancien credential valide vers V2 si disponible.
+  try{
+    const old=await env.DB.prepare("SELECT * FROM user_credentials WHERE user_id=?").bind(userId).first();
+    if(old&&old.password_hash&&old.password_salt){
+      await env.DB.prepare(`INSERT INTO auth_credentials_v2(user_id,password_hash,password_salt,password_iterations,updated_at)
+        VALUES(?,?,?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO NOTHING`)
+        .bind(userId,old.password_hash,old.password_salt,Number(old.password_iterations||ITER)).run();
+      cr=await env.DB.prepare("SELECT * FROM auth_credentials_v2 WHERE user_id=?").bind(userId).first();
+    }
+  }catch(e){
+    console.error(JSON.stringify({event:"legacy_credential_copy_warning",message:e?.message||String(e)}));
+  }
+  return cr||null;
+}
 async function audit(env,actor,action,type=null,id=null,addr=null,meta={}){
   try{await env.DB.prepare("INSERT INTO audit_logs(id,company_id,actor_user_id,action,target_type,target_id,ip,metadata_json) VALUES(?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(),actor?.company_id||null,actor?.id||null,action,type,id,addr,JSON.stringify(meta)).run()}catch(e){console.error(JSON.stringify({event:"audit_error",message:e?.message||String(e)}))}
 }
@@ -153,10 +156,10 @@ async function bootstrap(req,env){
 
     if(su){
       stage="credential_check";
-      const cr=await env.DB.prepare("SELECT user_id FROM user_credentials WHERE user_id=?").bind(su.id).first();
+      const cr=await env.DB.prepare("SELECT user_id FROM auth_credentials_v2 WHERE user_id=?").bind(su.id).first();
       if(!cr){
         stage="credential_repair";
-        await setCredential(env,su.id,env.SUPERADMIN_INITIAL_PASSWORD);
+        await setCredentialV2(env,su.id,env.SUPERADMIN_INITIAL_PASSWORD);
         await env.DB.prepare("UPDATE users SET password_version=password_version+1,status='active',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(su.id).run();
       }
       await clearFail(env,ip(req),su.email||em);
@@ -171,7 +174,7 @@ async function bootstrap(req,env){
       stage="repair_profile";
       await env.DB.prepare("UPDATE users SET company_id=NULL,email=?,full_name='Super Administrateur',role='superadmin',status='active',password_version=password_version+1,must_change_password=0,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(em,su.id).run();
       stage="repair_credential";
-      await setCredential(env,su.id,env.SUPERADMIN_INITIAL_PASSWORD);
+      await setCredentialV2(env,su.id,env.SUPERADMIN_INITIAL_PASSWORD);
       await clearFail(env,ip(req),em);
       await audit(env,{id:su.id,company_id:null},"SUPERADMIN_REPAIRED","user",su.id,ip(req));
       try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
@@ -183,7 +186,7 @@ async function bootstrap(req,env){
     await insertUserProfile(env,{id,company_id:null,email:em,full_name:"Super Administrateur",role:"superadmin",created_by:null,must_change_password:false});
 
     stage="insert_credential";
-    await setCredential(env,id,env.SUPERADMIN_INITIAL_PASSWORD);
+    await setCredentialV2(env,id,env.SUPERADMIN_INITIAL_PASSWORD);
 
     stage="finalize";
     await clearFail(env,ip(req),em);
@@ -209,11 +212,7 @@ async function login(req,env){
   if(await limited(env,addr,em))return json({error:"Trop de tentatives. Réessayez dans 15 minutes."},429);
   const u=await env.DB.prepare("SELECT * FROM users WHERE lower(email)=lower(?) LIMIT 1").bind(em).first();
   if(!u||u.status!=="active"){await fail(env,addr,em);return json({error:"Identifiants incorrects"},401)}
-  let cr=await env.DB.prepare("SELECT * FROM user_credentials WHERE user_id=?").bind(u.id).first();
-  if(!cr){
-    try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_login_migration_warning",message:e?.message||String(e)}))}
-    cr=await env.DB.prepare("SELECT * FROM user_credentials WHERE user_id=?").bind(u.id).first();
-  }
+  const cr=await getCredentialV2(env,u.id);
   if(!cr){await fail(env,addr,em);return json({error:"Identifiants incorrects"},401)}
   const h=await hashPassword(pw,cr.password_salt,Number(cr.password_iterations||ITER));
   if(!await safeEq(h,cr.password_hash)){await fail(env,addr,em);await audit(env,u,"LOGIN_FAILED","user",u.id,addr);return json({error:"Identifiants incorrects"},401)}
@@ -228,7 +227,7 @@ async function register(req,env){
   if(await env.DB.prepare("SELECT id FROM users WHERE lower(email)=lower(?)").bind(em).first())return json({error:"Cette adresse e-mail existe déjà"},409);
   const cid=crypto.randomUUID(),uid=crypto.randomUUID(),start=now(),end=plusDays(21);
   await env.DB.prepare("INSERT INTO companies(id,name,city,plan,plan_started_at,plan_expires_at,status) VALUES(?,?,?,'free',?,?,'active')").bind(cid,text(b.company_name,180),text(b.city,120),start,end).run();
-  await insertUserProfile(env,{id:uid,company_id:cid,email:em,full_name:text(b.full_name,160),phone:text(b.phone,50),role:"admin",created_by:uid});await setCredential(env,uid,pw);
+  await insertUserProfile(env,{id:uid,company_id:cid,email:em,full_name:text(b.full_name,160),phone:text(b.phone,50),role:"admin",created_by:uid});await setCredentialV2(env,uid,pw);
   const u=await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(uid).first(),s=await makeSession(env,u);await audit(env,u,"SELF_REGISTER","company",cid,ip(req),{plan:"free"});
   return json({authenticated:true,csrf:s.csrf,user:{id:uid,email:em,full_name:u.full_name,phone:u.phone,role:"admin"},company:{id:cid,name:text(b.company_name,180),city:text(b.city,120),plan:"free",plan_started_at:start,plan_expires_at:end,status:"active"},businessPaymentUrl:env.BUSINESS_PAYMENT_URL},201,{"set-cookie":setCookie(s.t)});
 }
@@ -291,17 +290,17 @@ async function saveCompany(req,env,s,entity,action,r){
     if(action==="delete"&&actor.role==="admin"){await env.DB.prepare("DELETE FROM labor_expenses WHERE id=? AND company_id=?").bind(r.id,c).run();return json({ok:true})}
   }
   if(entity==="user"&&actor.role==="admin"){
-    if(action==="create"){const em=email(r.email);if(!em||String(r.password||"").length<12)return json({error:"E-mail et mot de passe 12 caractères minimum"},400);if(await env.DB.prepare("SELECT id FROM users WHERE lower(email)=lower(?)").bind(em).first())return json({error:"E-mail déjà utilisé"},409);const id=crypto.randomUUID();await insertUserProfile(env,{id,company_id:c,email:em,full_name:text(r.full_name,160),phone:text(r.phone,50),role:"agent",created_by:actor.id,must_change_password:true});await setCredential(env,id,r.password);await audit(env,actor,"CREATE_AGENT","user",id,ip(req));return json({ok:true,id})}
+    if(action==="create"){const em=email(r.email);if(!em||String(r.password||"").length<12)return json({error:"E-mail et mot de passe 12 caractères minimum"},400);if(await env.DB.prepare("SELECT id FROM users WHERE lower(email)=lower(?)").bind(em).first())return json({error:"E-mail déjà utilisé"},409);const id=crypto.randomUUID();await insertUserProfile(env,{id,company_id:c,email:em,full_name:text(r.full_name,160),phone:text(r.phone,50),role:"agent",created_by:actor.id,must_change_password:true});await setCredentialV2(env,id,r.password);await audit(env,actor,"CREATE_AGENT","user",id,ip(req));return json({ok:true,id})}
     const u=await env.DB.prepare("SELECT * FROM users WHERE id=? AND company_id=? AND role='agent'").bind(r.id,c).first();if(!u)return json({error:"Agent introuvable"},404);
     if(["activate","disable","delete"].includes(action)){const st={activate:"active",disable:"disabled",delete:"deleted"}[action];await env.DB.prepare("UPDATE users SET status=?,password_version=password_version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(st,u.id).run();await audit(env,actor,"AGENT_"+action.toUpperCase(),"user",u.id,ip(req));return json({ok:true})}
-    if(action==="reset_password"){await setCredential(env,u.id,r.new_password);await env.DB.prepare("UPDATE users SET password_version=password_version+1,must_change_password=1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(u.id).run();if(r.reset_request_id)await env.DB.prepare("UPDATE password_reset_requests SET status='resolved',handled_by=?,handled_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?").bind(actor.id,r.reset_request_id,c).run();await audit(env,actor,"RESET_AGENT_PASSWORD","user",u.id,ip(req));return json({ok:true})}
+    if(action==="reset_password"){await setCredentialV2(env,u.id,r.new_password);await env.DB.prepare("UPDATE users SET password_version=password_version+1,must_change_password=1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(u.id).run();if(r.reset_request_id)await env.DB.prepare("UPDATE password_reset_requests SET status='resolved',handled_by=?,handled_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?").bind(actor.id,r.reset_request_id,c).run();await audit(env,actor,"RESET_AGENT_PASSWORD","user",u.id,ip(req));return json({ok:true})}
   }
   return json({error:"Action non autorisée"},403);
 }
 async function saveSuper(req,env,s,entity,action,r){
   const actor=s.u;
   if(entity==="company"){
-    if(action==="create"){const plan=r.plan==="business"?"business":"free",start=now(),end=plusDays(plan==="business"?365:21),cid=crypto.randomUUID(),uid=crypto.randomUUID(),em=email(r.admin_email);if(!text(r.name,180)||!em||String(r.admin_password||"").length<12)return json({error:"Entreprise, administrateur et mot de passe requis"},400);if(await env.DB.prepare("SELECT id FROM users WHERE lower(email)=lower(?)").bind(em).first())return json({error:"E-mail déjà utilisé"},409);await env.DB.prepare("INSERT INTO companies(id,name,city,plan,plan_started_at,plan_expires_at,status) VALUES(?,?,?,?,?,?,'active')").bind(cid,text(r.name,180),text(r.city,120),plan,start,end).run();await insertUserProfile(env,{id:uid,company_id:cid,email:em,full_name:text(r.admin_name,160),phone:text(r.admin_phone,50),role:"admin",created_by:actor.id,must_change_password:true});await setCredential(env,uid,r.admin_password);await audit(env,actor,"CREATE_COMPANY","company",cid,ip(req),{plan});return json({ok:true,id:cid})}
+    if(action==="create"){const plan=r.plan==="business"?"business":"free",start=now(),end=plusDays(plan==="business"?365:21),cid=crypto.randomUUID(),uid=crypto.randomUUID(),em=email(r.admin_email);if(!text(r.name,180)||!em||String(r.admin_password||"").length<12)return json({error:"Entreprise, administrateur et mot de passe requis"},400);if(await env.DB.prepare("SELECT id FROM users WHERE lower(email)=lower(?)").bind(em).first())return json({error:"E-mail déjà utilisé"},409);await env.DB.prepare("INSERT INTO companies(id,name,city,plan,plan_started_at,plan_expires_at,status) VALUES(?,?,?,?,?,?,'active')").bind(cid,text(r.name,180),text(r.city,120),plan,start,end).run();await insertUserProfile(env,{id:uid,company_id:cid,email:em,full_name:text(r.admin_name,160),phone:text(r.admin_phone,50),role:"admin",created_by:actor.id,must_change_password:true});await setCredentialV2(env,uid,r.admin_password);await audit(env,actor,"CREATE_COMPANY","company",cid,ip(req),{plan});return json({ok:true,id:cid})}
     const c=await env.DB.prepare("SELECT * FROM companies WHERE id=?").bind(r.id).first();if(!c)return json({error:"Entreprise introuvable"},404);
     if(action==="set_plan"){const plan=r.plan==="business"?"business":"free",start=now(),end=plusDays(plan==="business"?365:21);await env.DB.prepare("UPDATE companies SET plan=?,plan_started_at=?,plan_expires_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(plan,start,end,c.id).run();await audit(env,actor,"SET_PLAN","company",c.id,ip(req),{plan});return json({ok:true})}
     if(["activate","disable","delete"].includes(action)){const st={activate:"active",disable:"disabled",delete:"deleted"}[action];await env.DB.prepare("UPDATE companies SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(st,c.id).run();if(st!=="active")await env.DB.prepare("UPDATE users SET status='disabled',password_version=password_version+1 WHERE company_id=? AND status='active'").bind(c.id).run();await audit(env,actor,"COMPANY_"+action.toUpperCase(),"company",c.id,ip(req));return json({ok:true})}
@@ -309,7 +308,7 @@ async function saveSuper(req,env,s,entity,action,r){
   if(entity==="user"){
     const u=await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(r.id).first();if(!u||u.role==="superadmin")return json({error:"Compte protégé ou introuvable"},400);
     if(["activate","disable","delete"].includes(action)){const st={activate:"active",disable:"disabled",delete:"deleted"}[action];await env.DB.prepare("UPDATE users SET status=?,password_version=password_version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(st,u.id).run();await audit(env,actor,"MEMBER_"+action.toUpperCase(),"user",u.id,ip(req));return json({ok:true})}
-    if(action==="reset_password"){await setCredential(env,u.id,r.new_password);await env.DB.prepare("UPDATE users SET password_version=password_version+1,must_change_password=1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(u.id).run();if(r.reset_request_id)await env.DB.prepare("UPDATE password_reset_requests SET status='resolved',handled_by=?,handled_at=CURRENT_TIMESTAMP WHERE id=?").bind(actor.id,r.reset_request_id).run();await audit(env,actor,"RESET_MEMBER_PASSWORD","user",u.id,ip(req));return json({ok:true})}
+    if(action==="reset_password"){await setCredentialV2(env,u.id,r.new_password);await env.DB.prepare("UPDATE users SET password_version=password_version+1,must_change_password=1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(u.id).run();if(r.reset_request_id)await env.DB.prepare("UPDATE password_reset_requests SET status='resolved',handled_by=?,handled_at=CURRENT_TIMESTAMP WHERE id=?").bind(actor.id,r.reset_request_id).run();await audit(env,actor,"RESET_MEMBER_PASSWORD","user",u.id,ip(req));return json({ok:true})}
   }
   if(entity==="reset"&&action==="reject"){await env.DB.prepare("UPDATE password_reset_requests SET status='rejected',handled_by=?,handled_at=CURRENT_TIMESTAMP WHERE id=?").bind(actor.id,r.id).run();return json({ok:true})}
   return json({error:"Action Super Admin non autorisée"},403);
@@ -321,38 +320,24 @@ async function resetRequest(req,env){
   return json({ok:true,message:"Si ce compte existe, la demande a été enregistrée."});
 }
 async function changePassword(req,env){
-  const a=await auth(req,env,null,true);if(a.error)return a.error;const b=await body(req),cr=await env.DB.prepare("SELECT * FROM user_credentials WHERE user_id=?").bind(a.s.u.id).first();if(!cr)return json({error:"Compte d'authentification invalide"},400);const h=await hashPassword(String(b.current_password||""),cr.password_salt,Number(cr.password_iterations||ITER));if(!await safeEq(h,cr.password_hash))return json({error:"Mot de passe actuel incorrect"},400);await setCredential(env,a.s.u.id,b.new_password);await env.DB.prepare("UPDATE users SET password_version=password_version+1,must_change_password=0,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(a.s.u.id).run();await audit(env,a.s.u,"CHANGE_PASSWORD","user",a.s.u.id,ip(req));return json({ok:true})}
+  const a=await auth(req,env,null,true);if(a.error)return a.error;const b=await body(req),cr=await getCredentialV2(env,a.s.u.id);if(!cr)return json({error:"Compte d'authentification invalide"},400);const h=await hashPassword(String(b.current_password||""),cr.password_salt,Number(cr.password_iterations||ITER));if(!await safeEq(h,cr.password_hash))return json({error:"Mot de passe actuel incorrect"},400);await setCredentialV2(env,a.s.u.id,b.new_password);await env.DB.prepare("UPDATE users SET password_version=password_version+1,must_change_password=0,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(a.s.u.id).run();await audit(env,a.s.u,"CHANGE_PASSWORD","user",a.s.u.id,ip(req));return json({ok:true})}
 async function health(req,env){
-  let schema=false,superadmin=false,credential=false,credentialTable=false;
+  let schema=false,superadmin=false,credential=false;
   try{
     if(env.DB){
       const r=await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").first();
       schema=!!r;
-      const ct=await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='user_credentials'").first();
-      credentialTable=!!ct;
       if(schema){
         const u=await env.DB.prepare("SELECT id FROM users WHERE role='superadmin' AND status!='deleted' LIMIT 1").first();
         superadmin=!!u;
-        if(u&&credentialTable){
-          const c=await env.DB.prepare("SELECT user_id FROM user_credentials WHERE user_id=?").bind(u.id).first();
+        if(u){
+          const c=await env.DB.prepare("SELECT user_id FROM auth_credentials_v2 WHERE user_id=?").bind(u.id).first();
           credential=!!c;
         }
       }
     }
   }catch{}
-  return json({
-    ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"12.0.0",
-    d1_bound:!!env.DB,
-    kv_bound:!!env.GLOBAL_BT_KV,
-    superadmin_email_configured:!!env.SUPERADMIN_EMAIL,
-    superadmin_password_configured:!!env.SUPERADMIN_INITIAL_PASSWORD,
-    session_pepper_configured:!!env.SESSION_PEPPER,
-    schema_ready:schema,
-    credential_table_ready:credentialTable,
-    superadmin_ready:superadmin,
-    superadmin_credential_ready:credential
-  })
+  return json({ok:!!env.DB&&!!env.GLOBAL_BT_KV,app_version:"12.0.0",d1_bound:!!env.DB,kv_bound:!!env.GLOBAL_BT_KV,superadmin_email_configured:!!env.SUPERADMIN_EMAIL,superadmin_password_configured:!!env.SUPERADMIN_INITIAL_PASSWORD,session_pepper_configured:!!env.SESSION_PEPPER,schema_ready:schema,superadmin_ready:superadmin,superadmin_credential_ready:credential,auth_store:"auth_credentials_v2"})
 }
 
 async function route(req,env){

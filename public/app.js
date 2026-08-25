@@ -29,7 +29,7 @@ async function init(){
   catch(e){
     try{
       const h=await api("/api/health");
-      $("#authMessage").textContent=`Configuration : ${e.message} · Version ${h.app_version||"?"} · Table identifiants ${h.credential_table_ready?"prête":"absente"} · Super Admin ${h.superadmin_ready?"créé":"absent"} · Identifiant ${h.superadmin_credential_ready?"prêt":"absent"}`;
+      $("#authMessage").textContent=`Configuration : ${e.message} · Version ${h.app_version||"?"} · Super Admin ${h.superadmin_ready?"créé":"absent"} · Identifiant ${h.superadmin_credential_ready?"prêt":"absent"}`;
     }catch{$("#authMessage").textContent="Configuration : "+e.message}
   }
   try{S.session=await api("/api/session");await enter()}catch{}

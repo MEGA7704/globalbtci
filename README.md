@@ -101,5 +101,14 @@ Au premier chargement, `POST /api/bootstrap` crée ou répare le Super Admin si 
 Le Super Admin est créé/réparé avant la migration non bloquante des anciens identifiants. `/api/health` affiche `app_version`, `superadmin_ready` et `superadmin_credential_ready`.
 
 
-## V12 — Correction user_credentials
-Réparation automatique de la table `user_credentials`. `setCredential()` utilise maintenant DELETE + INSERT + vérification, sans UPSERT. `/api/health` expose `credential_table_ready`.
+## V12 — Authentification V2 indépendante
+
+Pour éliminer définitivement les conflits avec les anciennes tables de credentials,
+GLOBAL BT utilise maintenant `auth_credentials_v2`.
+
+- le profil utilisateur reste dans `users`;
+- le vrai hash/sel est stocké dans `auth_credentials_v2`;
+- l'ancienne table `user_credentials` n'est plus requise pour créer le Super Admin;
+- si un ancien credential valide existe, il peut être recopié vers V2 à la première connexion;
+- les nouveaux comptes, changements et réinitialisations utilisent exclusivement V2;
+- `/api/health` vérifie le credential Super Admin dans V2.
