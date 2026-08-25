@@ -188,3 +188,19 @@ dans `member_credentials_v3`.
 
 `/api/save` renvoie désormais le module, l'action et un code d'erreur précis au
 lieu d'un simple "Erreur serveur".
+
+
+## V18 — Authentification Administrateurs/Agents dans KV
+
+Correction définitive de `credential_insert`.
+
+- D1 garde les profils, entreprises, rôles, projets, dépenses et journaux.
+- `GLOBAL_BT_KV` garde les credentials serveur sous `cred:v1:<user_id>`.
+- Le navigateur ne reçoit jamais le hash, le sel ou le credential.
+- `POST /api/login` vérifie toujours le mot de passe uniquement dans `_worker.js`.
+- Les réinitialisations et changements de mot de passe mettent à jour KV.
+- `password_version` dans D1 invalide toujours les sessions après changement.
+- Les anciens credentials D1 sont migrés vers KV automatiquement s'ils existent.
+
+Cette version ne dépend plus des tables `user_credentials`, `auth_credentials_v2`
+ou `member_credentials_v3` pour créer un nouvel Administrateur.

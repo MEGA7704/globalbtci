@@ -16,6 +16,51 @@ function b64(a){return btoa(String.fromCharCode(...a))}
 function unb64(s){return Uint8Array.from(atob(String(s)),c=>c.charCodeAt(0))}
 async function hashPassword(password,salt,iterations=ITER){const key=await crypto.subtle.importKey("raw",enc.encode(password),"PBKDF2",false,["deriveBits"]);const bits=await crypto.subtle.deriveBits({name:"PBKDF2",hash:"SHA-256",salt:unb64(salt),iterations},key,256);return b64(new Uint8Array(bits))}
 async function safeEq(a,b){const x=new Uint8Array(await crypto.subtle.digest("SHA-256",enc.encode(String(a)))),y=new Uint8Array(await crypto.subtle.digest("SHA-256",enc.encode(String(b))));let d=x.length^y.length;for(let i=0;i<Math.min(x.length,y.length);i++)d|=x[i]^y[i];return d===0}
+
+async function kvCredentialKey(userId){
+  return `cred:v1:${userId}`;
+}
+async function setMemberCredentialKV(env,userId,password){
+  const p=String(password||"");
+  if(p.length<12)throw new Error("PASSWORD_TOO_SHORT");
+  const salt=b64(bytes(16));
+  const hash=await hashPassword(p,salt,ITER);
+  const key=await kvCredentialKey(userId);
+  await env.GLOBAL_BT_KV.put(key,JSON.stringify({
+    password_hash:hash,
+    password_salt:salt,
+    password_iterations:ITER,
+    updated_at:now()
+  }));
+}
+async function getMemberCredentialKV(env,userId){
+  const key=await kvCredentialKey(userId);
+  let cr=await env.GLOBAL_BT_KV.get(key,"json");
+  if(cr)return cr;
+
+  try{
+    let old=null;
+    try{old=await env.DB.prepare("SELECT * FROM member_credentials_v3 WHERE user_id=?").bind(userId).first()}catch{}
+    if(!old){try{old=await env.DB.prepare("SELECT * FROM auth_credentials_v2 WHERE user_id=?").bind(userId).first()}catch{}}
+    if(!old){try{old=await env.DB.prepare("SELECT * FROM user_credentials WHERE user_id=?").bind(userId).first()}catch{}}
+    if(old&&old.password_hash&&old.password_salt){
+      cr={
+        password_hash:old.password_hash,
+        password_salt:old.password_salt,
+        password_iterations:Number(old.password_iterations||ITER),
+        updated_at:now()
+      };
+      await env.GLOBAL_BT_KV.put(key,JSON.stringify(cr));
+      return cr;
+    }
+  }catch(e){
+    console.error(JSON.stringify({event:"credential_kv_migration_warning",message:e?.message||String(e)}));
+  }
+  return null;
+}
+async function deleteMemberCredentialKV(env,userId){
+  await env.GLOBAL_BT_KV.delete(await kvCredentialKey(userId));
+}
 async function sha(s){return hex(new Uint8Array(await crypto.subtle.digest("SHA-256",enc.encode(s))))}
 function cookie(req,name){for(const p of (req.headers.get("cookie")||"").split(";")){const [k,...r]=p.trim().split("=");if(k===name)return r.join("=")}return null}
 const setCookie=t=>`gbt_session=${t}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_TTL}`;
@@ -350,11 +395,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"17.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"18.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"17.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"18.0.0"},500);
   }
 }
 async function login(req,env){
@@ -396,7 +441,7 @@ async function login(req,env){
   }
 
   // Administrateurs et Agents : credentials stockés dans D1, hors données générales.
-  const cr=await getMemberCredentialV3(env,u.id);
+  const cr=await getMemberCredentialKV(env,u.id);
   if(!cr){
     await fail(env,addr,em);
     return json({error:"Identifiants incorrects"},401);
@@ -484,7 +529,7 @@ async function register(req,env){
     });
 
     stage="credential_insert";
-    await setMemberCredentialV3(env,uid,pw);
+    await setMemberCredentialKV(env,uid,pw);
 
     stage="session";
     const u=await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(uid).first();
@@ -516,7 +561,7 @@ async function register(req,env){
     // Nettoyage des créations partielles. Ne jamais laisser une entreprise orpheline.
     try{
       if(uid){
-        await env.DB.prepare("DELETE FROM member_credentials_v3 WHERE user_id=?").bind(uid).run();
+        await deleteMemberCredentialKV(env,uid);
         await env.DB.prepare("DELETE FROM users WHERE id=?").bind(uid).run();
       }
       if(cid){
@@ -552,16 +597,19 @@ async function load(req,env){
   if(s.u.role==="superadmin"){
     const [companies,users,resets,logs]=await Promise.all([
       env.DB.prepare("SELECT id,name,city,plan,plan_started_at,plan_expires_at,status,created_at FROM companies WHERE status!='deleted' ORDER BY created_at DESC").all(),
-      env.DB.prepare(`SELECT u.id,u.company_id,u.email,u.full_name,u.phone,u.role,u.status,u.created_at,c.name company_name,
-        CASE WHEN u.role='superadmin' THEN 1
-             WHEN EXISTS(SELECT 1 FROM member_credentials_v3 mc WHERE mc.user_id=u.id) THEN 1
-             ELSE 0 END credential_ready
+      env.DB.prepare(`SELECT u.id,u.company_id,u.email,u.full_name,u.phone,u.role,u.status,u.created_at,c.name company_name
         FROM users u LEFT JOIN companies c ON c.id=u.company_id
         WHERE u.status!='deleted' ORDER BY u.created_at DESC`).all(),
       env.DB.prepare("SELECT r.*,u.full_name,c.name company_name FROM password_reset_requests r LEFT JOIN users u ON u.id=r.user_id LEFT JOIN companies c ON c.id=r.company_id WHERE r.target_role='admin' ORDER BY r.created_at DESC LIMIT 300").all(),
       env.DB.prepare("SELECT a.*,u.full_name actor_name,c.name company_name FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_user_id LEFT JOIN companies c ON c.id=a.company_id ORDER BY a.created_at DESC LIMIT 400").all()
     ]);
-    return json({mode:"superadmin",companies:companies.results,users:users.results,resets:resets.results,logs:logs.results});
+    const outUsers=[];
+    for(const u of users.results||[]){
+      let ready=u.role==="superadmin";
+      if(!ready) ready=!!(await getMemberCredentialKV(env,u.id));
+      outUsers.push({...u,credential_ready:ready?1:0});
+    }
+    return json({mode:"superadmin",companies:companies.results,users:outUsers,resets:resets.results,logs:logs.results});
   }
   const c=s.u.company_id;
   const [projects,trades,suppliers,expenses,labor,users,resets]=await Promise.all([
@@ -570,12 +618,15 @@ async function load(req,env){
     env.DB.prepare("SELECT * FROM suppliers WHERE company_id=? ORDER BY name").bind(c).all(),
     env.DB.prepare("SELECT e.*,p.name project_name,t.name trade_name,sp.name supplier_name FROM expenses e JOIN projects p ON p.id=e.project_id LEFT JOIN trades t ON t.id=e.trade_id LEFT JOIN suppliers sp ON sp.id=e.supplier_id WHERE e.company_id=? ORDER BY e.expense_date DESC,e.created_at DESC").bind(c).all(),
     env.DB.prepare("SELECT l.*,p.name project_name,t.name trade_name FROM labor_expenses l JOIN projects p ON p.id=l.project_id LEFT JOIN trades t ON t.id=l.trade_id WHERE l.company_id=? ORDER BY l.expense_date DESC,l.created_at DESC").bind(c).all(),
-    s.u.role==="admin"?env.DB.prepare(`SELECT u.id,u.email,u.full_name,u.phone,u.role,u.status,u.created_at,
-      CASE WHEN EXISTS(SELECT 1 FROM member_credentials_v3 mc WHERE mc.user_id=u.id) THEN 1 ELSE 0 END credential_ready
+    s.u.role==="admin"?env.DB.prepare(`SELECT u.id,u.email,u.full_name,u.phone,u.role,u.status,u.created_at
       FROM users u WHERE u.company_id=? AND u.status!='deleted' ORDER BY u.created_at DESC`).bind(c).all():Promise.resolve({results:[]}),
     s.u.role==="admin"?env.DB.prepare("SELECT r.*,u.full_name FROM password_reset_requests r LEFT JOIN users u ON u.id=r.user_id WHERE r.company_id=? AND r.target_role='agent' ORDER BY r.created_at DESC LIMIT 200").bind(c).all():Promise.resolve({results:[]})
   ]);
-  return json({mode:"company",projects:projects.results,trades:trades.results,suppliers:suppliers.results,expenses:expenses.results,labor:labor.results,users:users.results,resets:resets.results});
+  const outUsers=[];
+  for(const u of users.results||[]){
+    outUsers.push({...u,credential_ready:(await getMemberCredentialKV(env,u.id))?1:0});
+  }
+  return json({mode:"company",projects:projects.results,trades:trades.results,suppliers:suppliers.results,expenses:expenses.results,labor:labor.results,users:outUsers,resets:resets.results});
 }
 
 async function save(req,env){
@@ -623,25 +674,25 @@ async function saveCompany(req,env,s,entity,action,r){
     if(action==="delete"&&actor.role==="admin"){await env.DB.prepare("DELETE FROM labor_expenses WHERE id=? AND company_id=?").bind(r.id,c).run();return json({ok:true})}
   }
   if(entity==="user"&&actor.role==="admin"){
-    if(action==="create"){const em=email(r.email);if(!em||String(r.password||"").length<12)return json({error:"E-mail et mot de passe 12 caractères minimum"},400);if(await env.DB.prepare("SELECT id FROM users WHERE lower(email)=lower(?)").bind(em).first())return json({error:"E-mail déjà utilisé"},409);const id=crypto.randomUUID();await insertUserProfile(env,{id,company_id:c,email:em,full_name:text(r.full_name,160),phone:text(r.phone,50),role:"agent",created_by:actor.id,must_change_password:true});await setMemberCredentialV3(env,id,r.password);await audit(env,actor,"CREATE_AGENT","user",id,ip(req));return json({ok:true,id})}
+    if(action==="create"){const em=email(r.email);if(!em||String(r.password||"").length<12)return json({error:"E-mail et mot de passe 12 caractères minimum"},400);if(await env.DB.prepare("SELECT id FROM users WHERE lower(email)=lower(?)").bind(em).first())return json({error:"E-mail déjà utilisé"},409);const id=crypto.randomUUID();await insertUserProfile(env,{id,company_id:c,email:em,full_name:text(r.full_name,160),phone:text(r.phone,50),role:"agent",created_by:actor.id,must_change_password:true});await setMemberCredentialKV(env,id,r.password);await audit(env,actor,"CREATE_AGENT","user",id,ip(req));return json({ok:true,id})}
     const u=await env.DB.prepare("SELECT * FROM users WHERE id=? AND company_id=? AND role='agent'").bind(r.id,c).first();if(!u)return json({error:"Agent introuvable"},404);
-    if(["activate","disable","delete"].includes(action)){const st={activate:"active",disable:"disabled",delete:"deleted"}[action];await env.DB.prepare("UPDATE users SET status=?,password_version=password_version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(st,u.id).run();await audit(env,actor,"AGENT_"+action.toUpperCase(),"user",u.id,ip(req));return json({ok:true})}
-    if(action==="reset_password"){await setMemberCredentialV3(env,u.id,r.new_password);await env.DB.prepare("UPDATE users SET password_version=password_version+1,must_change_password=1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(u.id).run();if(r.reset_request_id)await env.DB.prepare("UPDATE password_reset_requests SET status='resolved',handled_by=?,handled_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?").bind(actor.id,r.reset_request_id,c).run();await audit(env,actor,"RESET_AGENT_PASSWORD","user",u.id,ip(req));return json({ok:true})}
+    if(["activate","disable","delete"].includes(action)){const st={activate:"active",disable:"disabled",delete:"deleted"}[action];await env.DB.prepare("UPDATE users SET status=?,password_version=password_version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(st,u.id).run();if(action==="delete")await deleteMemberCredentialKV(env,u.id);await audit(env,actor,"AGENT_"+action.toUpperCase(),"user",u.id,ip(req));return json({ok:true})}
+    if(action==="reset_password"){await setMemberCredentialKV(env,u.id,r.new_password);await env.DB.prepare("UPDATE users SET password_version=password_version+1,must_change_password=1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(u.id).run();if(r.reset_request_id)await env.DB.prepare("UPDATE password_reset_requests SET status='resolved',handled_by=?,handled_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?").bind(actor.id,r.reset_request_id,c).run();await audit(env,actor,"RESET_AGENT_PASSWORD","user",u.id,ip(req));return json({ok:true})}
   }
   return json({error:"Action non autorisée"},403);
 }
 async function saveSuper(req,env,s,entity,action,r){
   const actor=s.u;
   if(entity==="company"){
-    if(action==="create"){const plan=r.plan==="business"?"business":"free",start=now(),end=plusDays(plan==="business"?365:21),cid=crypto.randomUUID(),uid=crypto.randomUUID(),em=email(r.admin_email);if(!text(r.name,180)||!em||String(r.admin_password||"").length<12)return json({error:"Entreprise, administrateur et mot de passe requis"},400);if(await env.DB.prepare("SELECT id FROM users WHERE lower(email)=lower(?)").bind(em).first())return json({error:"E-mail déjà utilisé"},409);await insertCompanyProfile(env,{id:cid,name:text(r.name,180),city:text(r.city,120),plan,plan_started_at:start,plan_expires_at:end,status:"active"});await insertUserProfile(env,{id:uid,company_id:cid,email:em,full_name:text(r.admin_name,160),phone:text(r.admin_phone,50),role:"admin",created_by:actor.id,must_change_password:true});await setMemberCredentialV3(env,uid,r.admin_password);await audit(env,actor,"CREATE_COMPANY","company",cid,ip(req),{plan});return json({ok:true,id:cid})}
+    if(action==="create"){const plan=r.plan==="business"?"business":"free",start=now(),end=plusDays(plan==="business"?365:21),cid=crypto.randomUUID(),uid=crypto.randomUUID(),em=email(r.admin_email);if(!text(r.name,180)||!em||String(r.admin_password||"").length<12)return json({error:"Entreprise, administrateur et mot de passe requis"},400);if(await env.DB.prepare("SELECT id FROM users WHERE lower(email)=lower(?)").bind(em).first())return json({error:"E-mail déjà utilisé"},409);await insertCompanyProfile(env,{id:cid,name:text(r.name,180),city:text(r.city,120),plan,plan_started_at:start,plan_expires_at:end,status:"active"});await insertUserProfile(env,{id:uid,company_id:cid,email:em,full_name:text(r.admin_name,160),phone:text(r.admin_phone,50),role:"admin",created_by:actor.id,must_change_password:true});await setMemberCredentialKV(env,uid,r.admin_password);await audit(env,actor,"CREATE_COMPANY","company",cid,ip(req),{plan});return json({ok:true,id:cid})}
     const c=await env.DB.prepare("SELECT * FROM companies WHERE id=?").bind(r.id).first();if(!c)return json({error:"Entreprise introuvable"},404);
     if(action==="set_plan"){const plan=r.plan==="business"?"business":"free",start=now(),end=plusDays(plan==="business"?365:21);await env.DB.prepare("UPDATE companies SET plan=?,plan_started_at=?,plan_expires_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(plan,start,end,c.id).run();await audit(env,actor,"SET_PLAN","company",c.id,ip(req),{plan});return json({ok:true})}
     if(["activate","disable","delete"].includes(action)){const st={activate:"active",disable:"disabled",delete:"deleted"}[action];await env.DB.prepare("UPDATE companies SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(st,c.id).run();if(st!=="active")await env.DB.prepare("UPDATE users SET status='disabled',password_version=password_version+1 WHERE company_id=? AND status='active'").bind(c.id).run();await audit(env,actor,"COMPANY_"+action.toUpperCase(),"company",c.id,ip(req));return json({ok:true})}
   }
   if(entity==="user"){
     const u=await env.DB.prepare("SELECT * FROM users WHERE id=?").bind(r.id).first();if(!u||u.role==="superadmin")return json({error:"Compte protégé ou introuvable"},400);
-    if(["activate","disable","delete"].includes(action)){const st={activate:"active",disable:"disabled",delete:"deleted"}[action];await env.DB.prepare("UPDATE users SET status=?,password_version=password_version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(st,u.id).run();await audit(env,actor,"MEMBER_"+action.toUpperCase(),"user",u.id,ip(req));return json({ok:true})}
-    if(action==="reset_password"){await setMemberCredentialV3(env,u.id,r.new_password);await env.DB.prepare("UPDATE users SET password_version=password_version+1,must_change_password=1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(u.id).run();if(r.reset_request_id)await env.DB.prepare("UPDATE password_reset_requests SET status='resolved',handled_by=?,handled_at=CURRENT_TIMESTAMP WHERE id=?").bind(actor.id,r.reset_request_id).run();await audit(env,actor,"RESET_MEMBER_PASSWORD","user",u.id,ip(req));return json({ok:true})}
+    if(["activate","disable","delete"].includes(action)){const st={activate:"active",disable:"disabled",delete:"deleted"}[action];await env.DB.prepare("UPDATE users SET status=?,password_version=password_version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(st,u.id).run();if(action==="delete")await deleteMemberCredentialKV(env,u.id);await audit(env,actor,"MEMBER_"+action.toUpperCase(),"user",u.id,ip(req));return json({ok:true})}
+    if(action==="reset_password"){await setMemberCredentialKV(env,u.id,r.new_password);await env.DB.prepare("UPDATE users SET password_version=password_version+1,must_change_password=1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(u.id).run();if(r.reset_request_id)await env.DB.prepare("UPDATE password_reset_requests SET status='resolved',handled_by=?,handled_at=CURRENT_TIMESTAMP WHERE id=?").bind(actor.id,r.reset_request_id).run();await audit(env,actor,"RESET_MEMBER_PASSWORD","user",u.id,ip(req));return json({ok:true})}
   }
   if(entity==="reset"&&action==="reject"){await env.DB.prepare("UPDATE password_reset_requests SET status='rejected',handled_by=?,handled_at=CURRENT_TIMESTAMP WHERE id=?").bind(actor.id,r.id).run();return json({ok:true})}
   return json({error:"Action Super Admin non autorisée"},403);
@@ -657,11 +708,11 @@ async function changePassword(req,env){
   if(a.s.u.role==="superadmin"){
     return json({error:"Le mot de passe Super Admin se modifie uniquement dans le secret Cloudflare SUPERADMIN_INITIAL_PASSWORD."},403);
   }
-  const b=await body(req),cr=await getMemberCredentialV3(env,a.s.u.id);
+  const b=await body(req),cr=await getMemberCredentialKV(env,a.s.u.id);
   if(!cr)return json({error:"Compte d'authentification invalide"},400);
   const h=await hashPassword(String(b.current_password||""),cr.password_salt,Number(cr.password_iterations||ITER));
   if(!await safeEq(h,cr.password_hash))return json({error:"Mot de passe actuel incorrect"},400);
-  await setMemberCredentialV3(env,a.s.u.id,b.new_password);
+  await setMemberCredentialKV(env,a.s.u.id,b.new_password);
   await env.DB.prepare("UPDATE users SET password_version=password_version+1,must_change_password=0,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(a.s.u.id).run();
   await audit(env,a.s.u,"CHANGE_PASSWORD","user",a.s.u.id,ip(req));
   return json({ok:true});
@@ -683,7 +734,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"17.0.0",
+    app_version:"18.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,
@@ -693,7 +744,7 @@ async function health(req,env){
     superadmin_ready:superadmin,
     superadmin_credential_ready:superadmin&&secretReady,
     superadmin_auth:"cloudflare_secret",
-    member_auth_store:"member_credentials_v3",schema_repair_version:"17"
+    member_auth_store:"GLOBAL_BT_KV / cred:v1:<user_id>",schema_repair_version:"18"
   });
 }
 
