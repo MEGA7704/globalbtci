@@ -348,3 +348,18 @@ Sur petits écrans, le scroll horizontal reste supprimé.
 - confirmation avant suppression ;
 - pagination automatique des listes pour conserver le popup sans défilement vertical/horizontal ;
 - chaque page de section est présentée entièrement à l’écran.
+
+
+## V33 — Popup projet fidèle à la maquette fournie
+
+- popup large centré, coins arrondis et fond extérieur flouté ;
+- bandeau ESPACE PROJET + bouton fermeture circulaire ;
+- grande bannière vert pétrole avec icône projet dorée ;
+- 3 cartes KPI Budget / Dépenses / Main-d'œuvre ;
+- onglets Métiers / Dépenses / Fournisseurs ;
+- tableau aéré affichant 3 lignes par page comme la maquette ;
+- boutons d'actions carrés Voir / Modifier / Supprimer ;
+- suppression des dépenses et retrait des fournisseurs conservés ;
+- carte d'information en pied de popup ;
+- boutons Imprimer et Fermer ;
+- aucun défilement vertical ou horizontal sur grand écran.
