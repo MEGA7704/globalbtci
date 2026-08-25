@@ -170,3 +170,21 @@ Correction :
 - réinitialisations et changements de mot de passe utilisent V3;
 - migration non bloquante depuis `auth_credentials_v2` ou `user_credentials`;
 - le Super Admin reste authentifié directement via le secret Cloudflare.
+
+
+## V17 — Réparation fonctionnelle générale
+
+Cette version met automatiquement à niveau toutes les tables métier existantes :
+`projects`, `trades`, `suppliers`, `expenses`, `labor_expenses`,
+`password_reset_requests`, `audit_logs`, `companies` et `users`.
+
+Le Super Admin et les Administrateurs voient aussi si chaque membre possède un
+credential V3 utilisable :
+- Accès prêt
+- Mot de passe à réinitialiser
+
+Une réinitialisation de mot de passe crée/répare automatiquement le credential
+dans `member_credentials_v3`.
+
+`/api/save` renvoie désormais le module, l'action et un code d'erreur précis au
+lieu d'un simple "Erreur serveur".
