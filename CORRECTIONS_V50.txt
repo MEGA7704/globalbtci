@@ -1,0 +1,15 @@
+GLOBAL BT — CORRECTIONS V50
+
+1. Fournisseurs de matériaux
+- Nouveau formulaire d’ajout direct avec champs obligatoires : nom du fournisseur, domaine/spécialité, contact, localisation.
+- Le fournisseur est créé et rattaché au projet dans la même opération.
+- Le formulaire de modification reprend les mêmes quatre champs.
+
+2. Ouvrages
+- Nouveau formulaire de saisie directe avec champs obligatoires : métier, domaine/spécialité, nom du prestataire/artisan, contact, localisation, main-d’œuvre convenue (FCFA), travaux fournis/description.
+- Le référentiel métier correspondant est créé ou réutilisé automatiquement en arrière-plan.
+
+3. Navigation après suppression
+- Une suppression de ligne conserve la vue active.
+- Dans un projet, l’utilisateur reste dans la section en cours (Fournisseurs, Ouvrages ou Matériaux) après suppression.
+- Sur les autres tableaux du programme, la page courante est conservée.

@@ -580,11 +580,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"48.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"50.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"48.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"50.0.0"},500);
   }
 }
 async function login(req,env){
@@ -1015,19 +1015,36 @@ async function saveCompany(req,env,s,entity,action,r){
   }
   if(entity==="trade"){
     if(action==="create"){
-      const projectId=text(r.project_id,100),catalogId=text(r.catalog_id,100);if(!projectId||!catalogId)return json({error:"Projet et métier de la liste générale obligatoires",code:"TRADE_MUST_BE_REGISTERED"},400);
+      const projectId=text(r.project_id,100);if(!projectId)return json({error:"Projet obligatoire"},400);
       const wp=await writableProject(env,c,projectId);if(wp.error)return wp.error;
-      const cat=await env.DB.prepare("SELECT id,phase,name FROM trade_catalog WHERE id=? AND company_id=?").bind(catalogId,c).first();if(!cat)return json({error:"Ce métier n'est pas enregistré dans la liste générale",code:"TRADE_MUST_BE_REGISTERED"},400);
-      const existing=await env.DB.prepare("SELECT id FROM trades WHERE company_id=? AND project_id=? AND catalog_id=? LIMIT 1").bind(c,projectId,catalogId).first();if(existing)return json({error:"Ce métier existe déjà pour ce projet",code:"TRADE_ALREADY_EXISTS",existing_id:existing.id},409);
-      const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO trades(id,company_id,project_id,catalog_id,name,description,phase,provider_name,provider_contact,provider_city,labor_amount) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(id,c,projectId,catalogId,cat.name,text(r.description,800),cat.phase,text(r.provider_name,180),text(r.provider_contact,80),text(r.provider_city,120),money(r.labor_amount)).run();await audit(env,actor,"CREATE_TRADE","trade",id,ip(req),{project_id:projectId,catalog_id:catalogId,name:cat.name,labor_amount:money(r.labor_amount)});return json({ok:true,id});
+      let catalogId=text(r.catalog_id,100),cat=null;
+      if(catalogId)cat=await env.DB.prepare("SELECT id,phase,name FROM trade_catalog WHERE id=? AND company_id=?").bind(catalogId,c).first();
+      if(!cat){
+        const phase=text(r.trade_name||r.phase,180),name=text(r.specialty||r.name,180);
+        if(!phase||!name)return json({error:"Métier et domaine / spécialité obligatoires"},400);
+        cat=await env.DB.prepare("SELECT id,phase,name FROM trade_catalog WHERE company_id=? AND lower(trim(phase))=lower(trim(?)) AND lower(trim(name))=lower(trim(?)) LIMIT 1").bind(c,phase,name).first();
+        if(!cat){catalogId=crypto.randomUUID();await env.DB.prepare("INSERT INTO trade_catalog(id,company_id,phase,name,created_by) VALUES(?,?,?,?,?)").bind(catalogId,c,phase,name,actor.id).run();cat={id:catalogId,phase,name}}
+        else catalogId=cat.id;
+      }
+      const existing=await env.DB.prepare("SELECT id FROM trades WHERE company_id=? AND project_id=? AND catalog_id=? LIMIT 1").bind(c,projectId,catalogId).first();if(existing)return json({error:"Cet ouvrage existe déjà pour ce projet",code:"TRADE_ALREADY_EXISTS",existing_id:existing.id},409);
+      const provider=text(r.provider_name,180),contact=text(r.provider_contact,80),location=text(r.provider_city,120),description=text(r.description,800);if(!provider||!contact||!location||!description)return json({error:"Prestataire, contact, localisation et travaux fournis sont obligatoires"},400);
+      const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO trades(id,company_id,project_id,catalog_id,name,description,phase,provider_name,provider_contact,provider_city,labor_amount) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(id,c,projectId,catalogId,cat.name,description,cat.phase,provider,contact,location,money(r.labor_amount)).run();await audit(env,actor,"CREATE_TRADE","trade",id,ip(req),{project_id:projectId,catalog_id:catalogId,name:cat.name,labor_amount:money(r.labor_amount)});return json({ok:true,id});
     }
     if(action==="update"){
-      const existing=await env.DB.prepare("SELECT * FROM trades WHERE id=? AND company_id=?").bind(r.id,c).first();if(!existing)return json({error:"Métier introuvable"},404);
-      const projectId=text(r.project_id||existing.project_id,100),catalogId=text(r.catalog_id,100);if(!catalogId)return json({error:"Sélectionnez un métier enregistré dans la liste générale",code:"TRADE_MUST_BE_REGISTERED"},400);
-      const wp=await writableProject(env,c,projectId);if(wp.error)return wp.error;
-      const cat=await env.DB.prepare("SELECT id,phase,name FROM trade_catalog WHERE id=? AND company_id=?").bind(catalogId,c).first();if(!cat)return json({error:"Ce métier n'est pas enregistré dans la liste générale",code:"TRADE_MUST_BE_REGISTERED"},400);
-      const duplicate=await env.DB.prepare("SELECT id FROM trades WHERE company_id=? AND project_id=? AND catalog_id=? AND id<>? LIMIT 1").bind(c,projectId,catalogId,r.id).first();if(duplicate)return json({error:"Ce métier existe déjà pour ce projet",code:"TRADE_ALREADY_EXISTS"},409);
-      await env.DB.prepare("UPDATE trades SET project_id=?,catalog_id=?,name=?,description=?,phase=?,provider_name=?,provider_contact=?,provider_city=?,labor_amount=? WHERE id=? AND company_id=?").bind(projectId,catalogId,cat.name,text(r.description,800),cat.phase,text(r.provider_name,180),text(r.provider_contact,80),text(r.provider_city,120),money(r.labor_amount),r.id,c).run();
+      const existing=await env.DB.prepare("SELECT * FROM trades WHERE id=? AND company_id=?").bind(r.id,c).first();if(!existing)return json({error:"Ouvrage introuvable"},404);
+      const projectId=text(r.project_id||existing.project_id,100);const wp=await writableProject(env,c,projectId);if(wp.error)return wp.error;
+      let catalogId=text(r.catalog_id,100),cat=null;
+      if(catalogId)cat=await env.DB.prepare("SELECT id,phase,name FROM trade_catalog WHERE id=? AND company_id=?").bind(catalogId,c).first();
+      if(!cat){
+        const phase=text(r.trade_name||r.phase||existing.phase,180),name=text(r.specialty||r.name||existing.name,180);
+        if(!phase||!name)return json({error:"Métier et domaine / spécialité obligatoires"},400);
+        cat=await env.DB.prepare("SELECT id,phase,name FROM trade_catalog WHERE company_id=? AND lower(trim(phase))=lower(trim(?)) AND lower(trim(name))=lower(trim(?)) LIMIT 1").bind(c,phase,name).first();
+        if(!cat){catalogId=crypto.randomUUID();await env.DB.prepare("INSERT INTO trade_catalog(id,company_id,phase,name,created_by) VALUES(?,?,?,?,?)").bind(catalogId,c,phase,name,actor.id).run();cat={id:catalogId,phase,name}}
+        else catalogId=cat.id;
+      }
+      const duplicate=await env.DB.prepare("SELECT id FROM trades WHERE company_id=? AND project_id=? AND catalog_id=? AND id<>? LIMIT 1").bind(c,projectId,catalogId,r.id).first();if(duplicate)return json({error:"Cet ouvrage existe déjà pour ce projet",code:"TRADE_ALREADY_EXISTS"},409);
+      const provider=text(r.provider_name||existing.provider_name,180),contact=text(r.provider_contact||existing.provider_contact,80),location=text(r.provider_city||existing.provider_city,120),description=text(r.description||existing.description,800);if(!provider||!contact||!location||!description)return json({error:"Prestataire, contact, localisation et travaux fournis sont obligatoires"},400);
+      await env.DB.prepare("UPDATE trades SET project_id=?,catalog_id=?,name=?,description=?,phase=?,provider_name=?,provider_contact=?,provider_city=?,labor_amount=? WHERE id=? AND company_id=?").bind(projectId,catalogId,cat.name,description,cat.phase,provider,contact,location,money(r.labor_amount),r.id,c).run();
       await env.DB.prepare("UPDATE expenses SET trade_phase_snapshot=?,trade_name_snapshot=? WHERE company_id=? AND trade_id=?").bind(cat.phase,cat.name,c,r.id).run();await audit(env,actor,"UPDATE_TRADE","trade",r.id,ip(req),{project_id:projectId,catalog_id:catalogId,name:cat.name});return json({ok:true});
     }
     if(action==="delete"&&actor.role==="admin"){
@@ -1038,7 +1055,7 @@ async function saveCompany(req,env,s,entity,action,r){
   }
   if(entity==="supplier"){
     if(action==="create"){const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO suppliers(id,company_id,name,phone,email,city,address,specialty,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?,?)").bind(id,c,text(r.name,180),text(r.phone,50),email(r.email)||null,text(r.city,120),text(r.address,240),text(r.specialty,160),text(r.notes,800),actor.id).run();return json({ok:true,id})}
-    if(action==="update"){const ex=await env.DB.prepare("SELECT id FROM suppliers WHERE id=? AND company_id=?").bind(r.id,c).first();if(!ex)return json({error:"Fournisseur introuvable"},404);await env.DB.prepare("UPDATE suppliers SET name=?,phone=?,email=?,city=?,address=?,specialty=?,notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?").bind(text(r.name,180),text(r.phone,50),email(r.email)||null,text(r.city,120),text(r.address,240),text(r.specialty,160),text(r.notes,800),r.id,c).run();return json({ok:true})}
+    if(action==="update"){const ex=await env.DB.prepare("SELECT * FROM suppliers WHERE id=? AND company_id=?").bind(r.id,c).first();if(!ex)return json({error:"Fournisseur introuvable"},404);const name=text(r.name,180),phone=text(r.phone,50),city=text(r.city,120),specialty=text(r.specialty,160);if(!name||!phone||!city||!specialty)return json({error:"Nom du fournisseur, domaine / spécialité, contact et localisation sont obligatoires"},400);await env.DB.prepare("UPDATE suppliers SET name=?,phone=?,city=?,specialty=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?").bind(name,phone,city,specialty,r.id,c).run();return json({ok:true})}
     if(action==="delete"&&actor.role==="admin"){
       const active=await env.DB.prepare(`SELECT p.name FROM projects p WHERE p.company_id=? AND p.status!='closed' AND (EXISTS(SELECT 1 FROM project_suppliers ps WHERE ps.company_id=p.company_id AND ps.project_id=p.id AND ps.supplier_id=?) OR EXISTS(SELECT 1 FROM expenses e WHERE e.company_id=p.company_id AND e.project_id=p.id AND e.supplier_id=?)) LIMIT 1`).bind(c,r.id,r.id).first();
       if(active)return json({error:"Suppression impossible : ce fournisseur participe à un projet non clôturé",code:"SUPPLIER_IN_ACTIVE_PROJECT",project:active.name},409);
@@ -1068,10 +1085,17 @@ async function saveCompany(req,env,s,entity,action,r){
   if(entity==="project_supplier"){
     if(actor.role!=="admin")return json({error:"Action réservée à l'Administrateur"},403);
     if(action==="create"){
-      const wp=await writableProject(env,c,r.project_id);if(wp.error)return wp.error;
-      const sp=await env.DB.prepare("SELECT id FROM suppliers WHERE id=? AND company_id=?").bind(r.supplier_id,c).first();if(!sp)return json({error:"Fournisseur invalide"},400);
-      const ex=await env.DB.prepare("SELECT id FROM project_suppliers WHERE company_id=? AND project_id=? AND supplier_id=?").bind(c,r.project_id,r.supplier_id).first();if(ex)return json({error:"Ce fournisseur est déjà affecté au projet"},409);
-      const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO project_suppliers(id,company_id,project_id,supplier_id,notes) VALUES(?,?,?,?,?)").bind(id,c,r.project_id,r.supplier_id,text(r.notes,500)).run();return json({ok:true,id});
+      const projectId=text(r.project_id,100),wp=await writableProject(env,c,projectId);if(wp.error)return wp.error;
+      let supplierId=text(r.supplier_id,100);
+      if(!supplierId){
+        const name=text(r.name,180),specialty=text(r.specialty,160),phone=text(r.phone,50),city=text(r.city,120);
+        if(!name||!specialty||!phone||!city)return json({error:"Nom du fournisseur, domaine / spécialité, contact et localisation sont obligatoires"},400);
+        supplierId=crypto.randomUUID();
+        await env.DB.prepare("INSERT INTO suppliers(id,company_id,name,phone,email,city,address,specialty,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?,?)").bind(supplierId,c,name,phone,null,city,null,specialty,null,actor.id).run();
+      }
+      const sp=await env.DB.prepare("SELECT id FROM suppliers WHERE id=? AND company_id=?").bind(supplierId,c).first();if(!sp)return json({error:"Fournisseur invalide"},400);
+      const ex=await env.DB.prepare("SELECT id FROM project_suppliers WHERE company_id=? AND project_id=? AND supplier_id=?").bind(c,projectId,supplierId).first();if(ex)return json({error:"Ce fournisseur est déjà affecté au projet"},409);
+      const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO project_suppliers(id,company_id,project_id,supplier_id,notes) VALUES(?,?,?,?,?)").bind(id,c,projectId,supplierId,text(r.notes,500)).run();return json({ok:true,id,supplier_id:supplierId});
     }
     if(action==="delete"){
       const link=await env.DB.prepare("SELECT supplier_id FROM project_suppliers WHERE id=? AND company_id=? AND project_id=?").bind(r.id,c,r.project_id).first();if(!link)return json({error:"Fournisseur du projet introuvable"},404);
@@ -1184,7 +1208,7 @@ async function cryptoHealth(req,env){
     const test=await makeMemberCredential("GlobalBT-Test-2026!");
     return json({
       ok:true,
-      app_version:"48.0.0",
+      app_version:"50.0.0",
       algorithm:"PBKDF2-SHA-256",
       iterations:test.password_iterations,
       elapsed_ms:Date.now()-started
@@ -1192,7 +1216,7 @@ async function cryptoHealth(req,env){
   }catch(e){
     return json({
       ok:false,
-      app_version:"48.0.0",
+      app_version:"50.0.0",
       code:e?.message||"PASSWORD_HASH_FAILED",
       elapsed_ms:Date.now()-started
     },500);
@@ -1226,7 +1250,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"48.0.0",
+    app_version:"50.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,
