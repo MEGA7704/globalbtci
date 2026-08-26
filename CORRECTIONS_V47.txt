@@ -1,0 +1,11 @@
+GLOBAL BT — V47 — Correction générale des sections Projet
+
+- Remplacement des anciens boutons Métiers / Matériaux / Fournisseurs dans la fiche projet.
+- Nouveau bouton Fournisseurs de matériaux avec achats, versements, reste et total.
+- Nouveau bouton Ouvrage avec métier, spécialité, prestataire, contact, ville, main-d’œuvre, versements et reste.
+- Nouveau bouton Matériaux fournis : date, désignation, fournisseur du projet, destination/ouvrage, quantité, prix unité, prix total.
+- Nouveau bouton Faire un payement : popup synchronisé avec fournisseur ou ouvrage et contrôle du reste dû.
+- Nouveau bouton État financier : total dépenses, total versements, total reste à payer et historique.
+- Impression individuelle A4 paysage des fournisseurs et ouvrages avec détails, versements et reste à payer.
+- Compatibilité D1 assurée par ensureSchema() + migration 0008_project_finance_v47.sql.
+- Les données des versions précédentes sont conservées ; les anciennes lignes main-d’œuvre servent de valeur de compatibilité lorsqu’aucun montant d’ouvrage V47 n’est défini.

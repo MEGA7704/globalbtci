@@ -783,3 +783,32 @@ label>.password-field-wrap input{margin-top:0}
 @media(max-width:1120px){.auth-screen.connected-home .landing-hero-grid{grid-template-columns:minmax(420px,1fr) minmax(330px,.8fr)}.landing-nav{margin-left:auto;flex:0 0 auto}}
 @media(max-width:820px){.landing-nav{display:flex!important;margin-left:auto;width:auto}.landing-home-link{min-height:36px;padding:0 13px;font-size:.8rem}.auth-screen.connected-home .landing-hero-grid{display:block}.auth-screen.connected-home .landing-copy{padding-left:0}}
 @media(max-width:540px){.landing-nav{display:flex!important}.landing-home-link{padding:0 10px;font-size:.76rem}}
+
+/* ===== V47 — SECTION PROJET : FOURNISSEURS / OUVRAGES / MATÉRIAUX / FINANCE ===== */
+.v47-project-tabs{display:grid;grid-template-columns:repeat(5,minmax(160px,1fr));gap:9px;border-bottom:0;padding:0}
+.v47-project-tabs .project-page-tab{min-height:48px;display:flex;align-items:center;justify-content:center;gap:8px;text-align:center;white-space:normal}
+.v47-project-tabs .project-page-tab b{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 6px;border-radius:999px;background:#eef4f2;color:#07594f;font-size:.72rem}
+.v47-project-tabs .project-page-tab.active b{background:rgba(255,255,255,.18);color:#fff}
+.v47-project-tabs .project-page-action-tab{background:linear-gradient(135deg,#d89d24,#efbd4d);border-color:#d89d24;color:#173a35}
+.v47-project-tabs .project-page-action-tab:hover{filter:brightness(.98);transform:translateY(-1px)}
+.v47-supplier-table .tablewrap,.v47-work-table .tablewrap,.v47-material-table .tablewrap{overflow:auto}
+.v47-supplier-table table{min-width:1050px}
+.v47-work-table table{min-width:1320px}
+.v47-material-table table{min-width:1120px}
+.v47-supplier-table th,.v47-work-table th,.v47-material-table th{vertical-align:middle}
+.v47-supplier-table th:last-child,.v47-work-table th:last-child,.v47-material-table th:last-child{text-align:center}
+.project-total-row td{background:#f0f6f4!important;border-top:2px solid #b7cec8!important;color:#123b35;font-weight:900}
+.project-total-row .money{color:#07594f}
+.finance-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.finance-summary-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px 22px;box-shadow:0 6px 20px rgba(12,55,50,.05)}
+.finance-summary-card small,.finance-summary-card strong,.finance-summary-card span{display:block}
+.finance-summary-card small{color:var(--muted);font-weight:800;margin-bottom:7px}
+.finance-summary-card strong{font-size:1.45rem;color:#07594f;margin-bottom:6px}
+.finance-summary-card span{font-size:.78rem;color:#6f807c;line-height:1.45}
+.finance-summary-card.emphasis{background:linear-gradient(135deg,#073f39,#075e54);border-color:#07594f;color:#fff}
+.finance-summary-card.emphasis small,.finance-summary-card.emphasis span{color:#d8e7e4}.finance-summary-card.emphasis strong{color:#f0bd4c}
+.finance-history-title{padding:16px 18px 3px}.finance-history-title h3{margin:0;color:#173b36}
+#v47PaymentHint strong{color:#07594f}
+#v47PaymentForm label,#v47SupplierEditForm label{display:block}
+@media(max-width:1200px){.v47-project-tabs{grid-template-columns:repeat(3,minmax(180px,1fr))}.finance-summary-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:760px){.v47-project-tabs{display:flex;overflow:auto;padding-bottom:5px}.v47-project-tabs .project-page-tab{min-width:190px}.finance-summary-grid{grid-template-columns:1fr}}

@@ -539,11 +539,60 @@ function renderProjectTradeCatalogForm(projectId,trade=null){
   const list=S.data.tradeCatalog||[];
   if(!list.length)return `<div class="empty"><strong>Aucun métier enregistré.</strong><br>Ajoutez d'abord le métier depuis le menu principal <b>Métiers</b>, puis revenez dans ce projet.</div>`;
   const selected=trade?.catalog_id||list.find(c=>String(c.name).toLowerCase()===String(trade?.name||"").toLowerCase()&&String(c.phase||"").toLowerCase()===String(trade?.phase||"").toLowerCase())?.id||"";
-  return `<form id="${trade?"v38ProjectTradeEditForm":"v38ProjectTradeForm"}" data-project="${esc(projectId)}" ${trade?`data-id="${esc(trade.id)}"`:""}>
+  return `<form id="${trade?"v38ProjectTradeEditForm":"v38ProjectTradeForm"}" data-project="${esc(projectId)}" ${trade?`data-id="${esc(trade.id)}"`:""} class="formgrid">
     <label>Métier / Corps principal<select name="catalog_id" required>${catalogTradeOptions(selected)}</select></label>
-    <label>Description activité<textarea name="description" rows="4" placeholder="Décrivez les travaux ou l'activité à réaliser">${esc(trade?.description||"")}</textarea></label>
-    <button class="btn primary full" type="submit">${trade?"Enregistrer":"Ajouter au projet"}</button>
+    <label>Nom du prestataire / artisan<input name="provider_name" value="${esc(trade?.provider_name||"")}" required></label>
+    <label>Contact<input name="provider_contact" value="${esc(trade?.provider_contact||"")}"></label>
+    <label>Ville<input name="provider_city" value="${esc(trade?.provider_city||"")}"></label>
+    <label>Main-d'œuvre convenue (FCFA)<input name="labor_amount" type="number" min="0" value="${Number(trade?.labor_amount||0)}" required></label>
+    <label class="span2">Travaux fournis / description<textarea name="description" rows="4" placeholder="Décrivez les travaux ou l'activité à réaliser">${esc(trade?.description||"")}</textarea></label>
+    <button class="btn primary span2" type="submit">${trade?"Enregistrer les modifications":"Ajouter l’ouvrage"}</button>
   </form>`;
+}
+function projectOuvrageLabor(projectId,trade){
+  const configured=Number(trade?.labor_amount||0);
+  if(configured>0)return configured;
+  return (S.data.labor||[]).filter(x=>x.project_id===projectId&&x.trade_id===trade?.id).reduce((a,x)=>a+Number(x.amount||0),0);
+}
+function projectTargetPayments(projectId,type,targetId){
+  return (S.data.payments||[]).filter(x=>x.project_id===projectId&&x.target_type===type&&x.target_id===targetId).reduce((a,x)=>a+Number(x.amount||0),0);
+}
+function projectPaymentOptions(projectId,type){
+  if(type==="supplier")return (S.data.projectSuppliers||[]).filter(x=>x.project_id===projectId).map(x=>({id:x.supplier_id,name:x.supplier_name||"Fournisseur"}));
+  return (S.data.trades||[]).filter(x=>x.project_id===projectId).map(x=>({id:x.id,name:`${x.provider_name||x.name||"Ouvrage"} — ${x.phase||""} / ${x.name||""}`}));
+}
+function openProjectPaymentModal(projectId){
+  const p=S.data.projects.find(x=>x.id===projectId);if(!p)return;
+  modal(`<h2>Faire un paiement · ${esc(p.name)}</h2><form id="v47PaymentForm" data-project="${esc(projectId)}" class="formgrid">
+    <label>Section visée<select id="v47PaymentType" name="target_type" required><option value="supplier">Fournisseur de matériaux</option><option value="ouvrage">Ouvrage</option></select></label>
+    <label>Bénéficiaire<select id="v47PaymentTarget" name="target_id" required></select></label>
+    <label>Montant versé (FCFA)<input name="amount" type="number" min="1" required></label>
+    <label>Date du paiement<input name="payment_date" type="date" value="${new Date().toISOString().slice(0,10)}" required></label>
+    <label>Mode de paiement<input name="payment_method" placeholder="Espèces, virement, Mobile Money..."></label>
+    <label>Référence<input name="reference" placeholder="N° reçu / transaction"></label>
+    <label class="span2">Notes<textarea name="notes" rows="3"></textarea></label>
+    <div id="v47PaymentHint" class="notice span2"></div>
+    <button class="btn primary span2" type="submit">Enregistrer le paiement</button>
+  </form>`);
+  const type=$("#v47PaymentType"),target=$("#v47PaymentTarget"),hint=$("#v47PaymentHint");
+  const refresh=()=>{
+    const options=projectPaymentOptions(projectId,type.value);
+    target.innerHTML=`<option value="">— Sélectionner —</option>`+options.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");
+    hint.textContent=options.length?"Sélectionnez le bénéficiaire. Le système contrôlera automatiquement le reste à payer.":"Aucun bénéficiaire disponible dans cette section.";
+  };
+  type.onchange=refresh;
+  target.onchange=()=>{
+    const id=target.value;if(!id)return;
+    let due=0,paid=0;
+    if(type.value==="supplier"){
+      due=(S.data.expenses||[]).filter(x=>x.project_id===projectId&&x.supplier_id===id).reduce((a,x)=>a+Number(x.total_price||0),0);
+      paid=projectTargetPayments(projectId,"supplier",id);
+    }else{
+      const t=(S.data.trades||[]).find(x=>x.id===id);due=projectOuvrageLabor(projectId,t);paid=projectTargetPayments(projectId,"ouvrage",id);
+    }
+    hint.innerHTML=`Valeur due : <strong>${cash(due)}</strong> · Déjà versé : <strong>${cash(paid)}</strong> · Reste : <strong>${cash(Math.max(0,due-paid))}</strong>`;
+  };
+  refresh();
 }
 function trades(){
   const catalog=S.data.tradeCatalog||[];
@@ -641,62 +690,105 @@ function v29TradeIcon(name){
   return "🛠";
 }
 
-function v36ProjectPage(projectId,initialView="trades"){
+function v36ProjectPage(projectId,initialView="suppliers"){
+  if(initialView==="trades")initialView="works";
+  if(initialView==="expenses")initialView="materials";
+  if(!["suppliers","works","materials","finance"].includes(initialView))initialView="suppliers";
   const p=S.data.projects.find(x=>x.id===projectId);if(!p)return projects();
   S.currentProjectId=projectId;S.currentProjectView=initialView;
   const trades=(S.data.trades||[]).filter(x=>x.project_id===projectId);
   const expenses=(S.data.expenses||[]).filter(x=>x.project_id===projectId);
   const suppliers=(S.data.projectSuppliers||[]).filter(x=>x.project_id===projectId);
-  const laborRows=(S.data.labor||[]).filter(x=>x.project_id===projectId);
-  const expenseTotal=expenses.reduce((a,x)=>a+Number(x.total_price||0),0),laborTotal=laborRows.reduce((a,x)=>a+Number(x.amount||0),0);
+  const payments=(S.data.payments||[]).filter(x=>x.project_id===projectId);
+  const materialTotal=expenses.reduce((a,x)=>a+Number(x.total_price||0),0);
+  const laborTotal=trades.reduce((a,x)=>a+projectOuvrageLabor(projectId,x),0);
+  const paymentTotal=payments.reduce((a,x)=>a+Number(x.amount||0),0);
+  const totalExpense=materialTotal+laborTotal,totalRemaining=Math.max(0,totalExpense-paymentTotal);
   const updated=df(p.updated_at||p.created_at||"");
-  const pages={trades:0,expenses:0,suppliers:0},pageSize=6;
-  let expenseQuery="";
+  const pages={suppliers:0,works:0,materials:0},pageSize=8;
 
   $("#content").innerHTML=`
-    <section class="project-page-pro">
+    <section class="project-page-pro v47-project-finance">
       <div class="project-page-toolbar">
         <button id="projectBack" class="btn secondary">← Retour aux projets</button>
         <div class="project-page-titlebar"><span class="eyebrow">ESPACE PROJET</span><span class="project-page-update">Mis à jour le ${esc(updated)}</span></div>
       </div>
       <div class="project-page-hero">
         <div class="project-page-identity"><div class="project-page-icon">▥</div><div><span class="project-code">${esc(p.project_number||"PRJ")}</span><h1>${esc(p.name)}</h1><p>⌖ ${esc(p.location||"Localité non renseignée")}</p><span class="status">${esc(statusLabel(p.status))}</span></div></div>
-        <div class="project-page-kpis"><div class="project-page-kpi"><small>Budget</small><strong>${cash(p.budget)}</strong></div><div class="project-page-kpi gold"><small>Matériaux</small><strong>${cash(expenseTotal)}</strong></div><div class="project-page-kpi blue"><small>Main-d'œuvre</small><strong>${cash(laborTotal)}</strong></div></div>
+        <div class="project-page-kpis"><div class="project-page-kpi"><small>Dépenses totales</small><strong>${cash(totalExpense)}</strong></div><div class="project-page-kpi gold"><small>Versements</small><strong>${cash(paymentTotal)}</strong></div><div class="project-page-kpi blue"><small>Reste à payer</small><strong>${cash(totalRemaining)}</strong></div></div>
       </div>
-      <div class="project-page-tabs"><button class="project-page-tab ${initialView==="trades"?"active":""}" data-view="trades">Métiers <b>${trades.length}</b></button><button class="project-page-tab ${initialView==="expenses"?"active":""}" data-view="expenses">Matériaux <b>${expenses.length}</b></button><button class="project-page-tab ${initialView==="suppliers"?"active":""}" data-view="suppliers">Fournisseurs <b>${suppliers.length}</b></button></div>
+      <div class="project-page-tabs v47-project-tabs">
+        <button class="project-page-tab ${initialView==="suppliers"?"active":""}" data-view="suppliers">Fournisseurs de matériaux <b>${suppliers.length}</b></button>
+        <button class="project-page-tab ${initialView==="works"?"active":""}" data-view="works">Ouvrage <b>${trades.length}</b></button>
+        <button class="project-page-tab ${initialView==="materials"?"active":""}" data-view="materials">Matériaux fournis <b>${expenses.length}</b></button>
+        <button id="projectMakePayment" class="project-page-tab project-page-action-tab">Faire un payement</button>
+        <button class="project-page-tab ${initialView==="finance"?"active":""}" data-view="finance">État financier</button>
+      </div>
       <div id="projectPageContent" class="project-page-content"></div>
     </section>`;
   $("#projectBack").onclick=()=>{S.currentProjectId=null;projects()};
-  const content=$("#projectPageContent"),tabs=[...document.querySelectorAll(".project-page-tab")];
-  const pager=(view,total)=>{const count=Math.max(1,Math.ceil(total/pageSize)),page=Math.min(pages[view],count-1);pages[view]=page;if(count<=1)return "";return `<div class="project-page-pager"><button class="btn small secondary project-page-prev" ${page===0?"disabled":""}>←</button><span>Page ${page+1} / ${count}</span><button class="btn small secondary project-page-next" ${page===count-1?"disabled":""}>→</button></div>`};
-  const slice=(view,arr)=>arr.slice(pages[view]*pageSize,pages[view]*pageSize+pageSize);
-  const bindPager=(view,total)=>{const max=Math.max(0,Math.ceil(total/pageSize)-1);content.querySelector(".project-page-prev")?.addEventListener("click",()=>{pages[view]=Math.max(0,pages[view]-1);show(view)});content.querySelector(".project-page-next")?.addEventListener("click",()=>{pages[view]=Math.min(max,pages[view]+1);show(view)})};
-  const materialRows=()=>{const q=expenseQuery.trim().toLowerCase();if(!q)return expenses;return expenses.filter(x=>[x.trade_phase,x.trade_name,x.expense_date,df(x.expense_date),x.supplier_name].some(v=>String(v||"").toLowerCase().includes(q)))};
+  $("#projectMakePayment").onclick=()=>openProjectPaymentModal(projectId);
+  const content=$("#projectPageContent"),tabs=[...document.querySelectorAll(".project-page-tab[data-view]")];
+  const pager=(view,total)=>{const count=Math.max(1,Math.ceil(total/pageSize)),page=Math.min(pages[view]||0,count-1);pages[view]=page;if(count<=1)return "";return `<div class="project-page-pager"><button class="btn small secondary project-page-prev" ${page===0?"disabled":""}>←</button><span>Page ${page+1} / ${count}</span><button class="btn small secondary project-page-next" ${page===count-1?"disabled":""}>→</button></div>`};
+  const slice=(view,arr)=>arr.slice((pages[view]||0)*pageSize,(pages[view]||0)*pageSize+pageSize);
+  const bindPager=(view,total)=>{const max=Math.max(0,Math.ceil(total/pageSize)-1);content.querySelector(".project-page-prev")?.addEventListener("click",()=>{pages[view]=Math.max(0,(pages[view]||0)-1);show(view)});content.querySelector(".project-page-next")?.addEventListener("click",()=>{pages[view]=Math.min(max,(pages[view]||0)+1);show(view)})};
+  const supplierPurchased=id=>expenses.filter(x=>x.supplier_id===id).reduce((a,x)=>a+Number(x.total_price||0),0);
+  const supplierPaid=id=>projectTargetPayments(projectId,"supplier",id);
+  const workPaid=id=>projectTargetPayments(projectId,"ouvrage",id);
+  const supplierOptions=selected=>`<option value="">— Sélectionner —</option>`+suppliers.map(x=>`<option value="${esc(x.supplier_id)}" ${x.supplier_id===selected?"selected":""}>${esc(x.supplier_name||"")}</option>`).join("");
+  const workOptions=selected=>`<option value="">— Sélectionner —</option>`+trades.map(x=>`<option value="${esc(x.id)}" ${x.id===selected?"selected":""}>${esc((x.provider_name?x.provider_name+" — ":"")+(x.phase||"")+" / "+(x.name||""))}</option>`).join("");
+  const totalRow=(cols,label,cells)=>`<tr class="project-total-row"><td colspan="${cols}"><strong>${esc(label)}</strong></td>${cells.map(x=>`<td class="money"><strong>${x}</strong></td>`).join("")}<td></td></tr>`;
+
+  const printSupplier=sp=>{
+    const mats=expenses.filter(x=>x.supplier_id===sp.supplier_id),pays=payments.filter(x=>x.target_type==="supplier"&&x.target_id===sp.supplier_id),purchased=supplierPurchased(sp.supplier_id),paid=supplierPaid(sp.supplier_id),remain=Math.max(0,purchased-paid);
+    const body=`<table><tr><th>Domaine / spécialité</th><th>Nom</th><th>Contact</th><th>Ville</th><th>Valeur totale achetée</th><th>Versements reçus</th><th>Reste à payer</th></tr><tr><td>${esc(sp.specialty||"—")}</td><td>${esc(sp.supplier_name||"—")}</td><td>${esc(sp.phone||"—")}</td><td>${esc(sp.city||"—")}</td><td class="money">${cash(purchased)}</td><td class="money">${cash(paid)}</td><td class="money">${cash(remain)}</td></tr></table><h3>Matériaux fournis</h3><table><tr><th>Date</th><th>Désignation</th><th>Destination / ouvrage</th><th>Quantité</th><th>Prix unité</th><th>Prix total</th></tr>${mats.map(x=>{const t=trades.find(t=>t.id===x.trade_id);return `<tr><td>${df(x.expense_date)}</td><td>${esc(x.description||"")}</td><td>${esc(t?`${t.phase||""} / ${t.name||""}`:(x.trade_name||"—"))}</td><td>${Number(x.quantity||0).toLocaleString("fr-FR")}${x.unit?` ${esc(x.unit)}`:""}</td><td class="money">${cash(x.unit_price)}</td><td class="money">${cash(x.total_price)}</td></tr>`}).join("")||`<tr><td colspan="6">Aucun matériau fourni</td></tr>`}</table><h3>Versements</h3><table><tr><th>Date</th><th>Mode</th><th>Référence</th><th>Montant</th></tr>${pays.map(x=>`<tr><td>${df(x.payment_date)}</td><td>${esc(x.payment_method||"—")}</td><td>${esc(x.reference||"—")}</td><td class="money">${cash(x.amount)}</td></tr>`).join("")||`<tr><td colspan="4">Aucun versement</td></tr>`}</table>`;
+    printA4(`Fournisseur de matériaux : ${sp.supplier_name||""}`,p.name,body,"landscape",{info:projectPrintInfo(p),totalLabel:"Reste à payer",total:cash(remain)});
+  };
+  const printWork=t=>{
+    const labor=projectOuvrageLabor(projectId,t),paid=workPaid(t.id),remain=Math.max(0,labor-paid),pays=payments.filter(x=>x.target_type==="ouvrage"&&x.target_id===t.id);
+    const body=`<table><tr><th>Métier</th><th>Domaine / spécialité</th><th>Nom</th><th>Contact</th><th>Ville</th><th>Main-d'œuvre</th><th>Versements reçus</th><th>Reste à payer</th></tr><tr><td>${esc(t.phase||"—")}</td><td>${esc(t.name||"—")}</td><td>${esc(t.provider_name||"—")}</td><td>${esc(t.provider_contact||"—")}</td><td>${esc(t.provider_city||"—")}</td><td class="money">${cash(labor)}</td><td class="money">${cash(paid)}</td><td class="money">${cash(remain)}</td></tr></table><h3>Travaux fournis</h3><table><tr><th>Description des travaux</th></tr><tr><td>${esc(t.description||"—")}</td></tr></table><h3>Versements</h3><table><tr><th>Date</th><th>Mode</th><th>Référence</th><th>Montant</th></tr>${pays.map(x=>`<tr><td>${df(x.payment_date)}</td><td>${esc(x.payment_method||"—")}</td><td>${esc(x.reference||"—")}</td><td class="money">${cash(x.amount)}</td></tr>`).join("")||`<tr><td colspan="4">Aucun versement</td></tr>`}</table>`;
+    printA4(`Ouvrage : ${t.phase||""} / ${t.name||""}`,p.name,body,"landscape",{info:projectPrintInfo(p),totalLabel:"Reste à payer",total:cash(remain)});
+  };
 
   const show=view=>{
     S.currentProjectView=view;tabs.forEach(b=>b.classList.toggle("active",b.dataset.view===view));
-    if(view==="trades"){
-      const rows=slice(view,trades);
-      content.innerHTML=`<div class="project-page-section-head"><div><h2>Métiers du projet</h2><p>Seuls les métiers déjà enregistrés dans la liste générale peuvent être affectés à ce projet.</p></div><div class="toolbar"><button id="v37PrintProjectTrades" class="btn secondary">PDF A4</button><button id="projectAddTrade" class="btn primary">+ Ajouter un métier</button></div></div>
-      <div class="project-page-card v38-trades-table">${table(["Métier / Corps principal","Activité","Description activité","Main-d'œuvre","Actions"],rows.map(t=>{const mt=laborRows.filter(l=>l.trade_id===t.id).reduce((a,x)=>a+Number(x.amount||0),0);return `<tr><td><strong>${esc(t.phase||"—")}</strong></td><td>${esc(t.name||"—")}</td><td>${esc(t.description||"—")}</td><td class="money">${cash(mt)}</td><td class="v38-actions-cell"><div class="actions v38-actions"><button class="btn small secondary page-edit-trade" data-id="${t.id}">Modifier</button>${S.session.user.role==="admin"?`<button class="btn small danger page-delete-trade" data-id="${t.id}">Supprimer</button>`:""}</div></td></tr>`}))}</div>${pager(view,trades.length)}`;
-      $("#projectAddTrade").onclick=()=>{if(!(S.data.tradeCatalog||[]).length)return toast("Enregistrez d'abord ce métier dans le menu principal Métiers.",true);modal(`<h2>Ajouter un métier · ${esc(p.name)}</h2>${renderProjectTradeCatalogForm(projectId)}`)};
-      document.querySelectorAll(".page-edit-trade").forEach(b=>b.onclick=()=>{const t=trades.find(x=>x.id===b.dataset.id);if(!t)return;modal(`<h2>Modifier le métier du projet</h2>${renderProjectTradeCatalogForm(projectId,t)}`)});
-      document.querySelectorAll(".page-delete-trade").forEach(b=>b.onclick=()=>confirmBox("Supprimer ce métier de ce projet ?",async()=>{await post("/api/save",{entity:"trade",action:"delete",record:{id:b.dataset.id,project_id:projectId}});await reload();v36ProjectPage(projectId,"trades");toast("Métier retiré du projet")}));bindPager(view,trades.length);
-    }
-    if(view==="expenses"){
-      const filtered=materialRows();const rows=slice(view,filtered);
-      content.innerHTML=`<div class="project-page-section-head"><div><h2>Matériaux du projet</h2><p>Suivez les matériaux par métier, date et fournisseur.</p></div><div class="toolbar"><button id="v37PrintProjectMaterials" class="btn secondary">PDF A4</button><button id="projectAddExpense" class="btn primary">+ Ajouter des matériaux</button></div></div>
-      <div class="v38-material-search"><span>⌕</span><input id="v38MaterialSearch" type="search" placeholder="Rechercher par métier, date ou fournisseur..." value="${esc(expenseQuery)}"><small>${filtered.length} résultat(s)</small></div>
-      <div class="project-page-card v38-materials-table">${table(["Date","Métier / Corps principal","Activité","Désignation","Fournisseur","Quantité","Prix unitaire","Prix total","Actions"],rows.map(x=>`<tr><td>${df(x.expense_date)}</td><td>${esc(x.trade_phase||"—")}</td><td>${esc(x.trade_name||"—")}</td><td><strong>${esc(x.description||"")}</strong></td><td>${esc(x.supplier_name||"—")}</td><td class="money">${Number(x.quantity||0).toLocaleString("fr-FR")}${x.unit?` ${esc(x.unit)}`:""}</td><td class="money">${cash(x.unit_price)}</td><td class="money">${cash(x.total_price)}</td><td class="v38-actions-cell"><div class="actions v38-actions"><button class="btn small secondary page-edit-expense" data-id="${x.id}">Modifier</button>${S.session.user.role==="admin"?`<button class="btn small danger page-delete-expense" data-id="${x.id}">Supprimer</button>`:""}</div></td></tr>`))}</div>${pager(view,filtered.length)}`;
-      const search=$("#v38MaterialSearch");search?.addEventListener("input",()=>{expenseQuery=search.value;pages.expenses=0;show("expenses");const next=$("#v38MaterialSearch");next?.focus();if(next)next.setSelectionRange(next.value.length,next.value.length)});
-      $("#projectAddExpense").onclick=()=>modal(`<h2>Nouveaux matériaux · ${esc(p.name)}</h2><form id="v36ExpenseForm" data-project="${projectId}"><label>Métier<select name="trade_id" required>${opts(trades)}</select></label><label>Fournisseur<select name="supplier_id">${opts(S.data.suppliers||[])}</select></label><label>Date<input name="expense_date" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label>Désignation<input name="description" required></label><label>Quantité<input name="quantity" type="number" step=".01" value="1"></label><label>Unité<input name="unit"></label><label>Prix unitaire<input name="unit_price" type="number" min="0"></label><label>Référence<input name="reference"></label><button class="btn primary full">Enregistrer</button></form>`);
-      document.querySelectorAll(".page-edit-expense").forEach(b=>b.onclick=()=>{const x=expenses.find(e=>e.id===b.dataset.id);if(!x)return;modal(`<h2>Modifier les matériaux</h2><form id="v38ExpenseEditForm" data-id="${x.id}" data-project="${projectId}"><label>Métier<select name="trade_id" required>${opts(trades,x.trade_id)}</select></label><label>Fournisseur<select name="supplier_id">${opts(S.data.suppliers||[],x.supplier_id)}</select></label><label>Date<input name="expense_date" type="date" value="${esc(x.expense_date||"")}"></label><label>Désignation<input name="description" value="${esc(x.description||"")}" required></label><label>Quantité<input name="quantity" type="number" step=".01" value="${Number(x.quantity||0)}"></label><label>Unité<input name="unit" value="${esc(x.unit||"")}"></label><label>Prix unitaire<input name="unit_price" type="number" min="0" value="${Number(x.unit_price||0)}"></label><label>Référence<input name="reference" value="${esc(x.reference||"")}"></label><button class="btn primary full">Enregistrer</button></form>`)});
-      document.querySelectorAll(".page-delete-expense").forEach(b=>b.onclick=()=>confirmBox("Supprimer définitivement ces matériaux ?",async()=>{await post("/api/save",{entity:"expense",action:"delete",record:{id:b.dataset.id,project_id:projectId}});await reload();v36ProjectPage(projectId,"expenses");toast("Matériaux supprimés")}));bindPager(view,filtered.length);
-    }
     if(view==="suppliers"){
-      const rows=slice(view,suppliers);content.innerHTML=`<div class="project-page-section-head"><div><h2>Fournisseurs du projet</h2><p>Consultez et gérez les fournisseurs affectés à ce projet.</p></div><div class="toolbar"><button id="v37PrintProjectSuppliers" class="btn secondary">PDF A4</button><button id="projectAddSupplier" class="btn primary">+ Affecter un fournisseur</button></div></div><div class="project-page-card">${table(["Fournisseur","Contact","Spécialité","Matériaux","Actions"],rows.map(x=>{const spent=expenses.filter(e=>e.supplier_id===x.supplier_id).reduce((a,e)=>a+Number(e.total_price||0),0);return `<tr><td><strong>${esc(x.supplier_name)}</strong></td><td>${esc(x.phone||"—")}</td><td>${esc(x.specialty||"—")}</td><td class="money">${cash(spent)}</td><td class="v38-actions-cell">${S.session.user.role==="admin"?`<button class="btn small danger page-delete-project-supplier" data-id="${x.id}">Retirer</button>`:"—"}</td></tr>`}))}</div>${pager(view,suppliers.length)}`;
-      $("#projectAddSupplier").onclick=()=>modal(`<h2>Affecter un fournisseur · ${esc(p.name)}</h2><form id="v36SupplierForm" data-project="${projectId}"><label>Fournisseur<select name="supplier_id" required>${opts(S.data.suppliers||[])}</select></label><label>Notes<textarea name="notes"></textarea></label><button class="btn primary full">Affecter</button></form>`);
-      document.querySelectorAll(".page-delete-project-supplier").forEach(b=>b.onclick=()=>confirmBox("Retirer ce fournisseur du projet ?",async()=>{await post("/api/save",{entity:"project_supplier",action:"delete",record:{id:b.dataset.id,project_id:projectId}});await reload();v36ProjectPage(projectId,"suppliers");toast("Fournisseur retiré du projet")}));bindPager(view,suppliers.length);
+      const rows=slice(view,suppliers),sumPurchased=suppliers.reduce((a,x)=>a+supplierPurchased(x.supplier_id),0),sumPaid=suppliers.reduce((a,x)=>a+supplierPaid(x.supplier_id),0),sumRemain=Math.max(0,sumPurchased-sumPaid);
+      const available=(S.data.suppliers||[]).filter(x=>!suppliers.some(sp=>sp.supplier_id===x.id));
+      const bodyRows=rows.map(x=>{const bought=supplierPurchased(x.supplier_id),paid=supplierPaid(x.supplier_id),remain=Math.max(0,bought-paid);return `<tr><td>${esc(x.specialty||"—")}</td><td><strong>${esc(x.supplier_name||"—")}</strong></td><td>${esc(x.phone||"—")}</td><td class="money">${cash(bought)}</td><td class="money">${cash(paid)}</td><td class="money">${cash(remain)}</td><td class="v38-actions-cell"><div class="actions v38-actions"><button class="btn small secondary v47-edit-supplier" data-id="${x.supplier_id}">Modifier</button><button class="btn small secondary v47-print-supplier" data-id="${x.supplier_id}">Imprimer</button>${S.session.user.role==="admin"?`<button class="btn small danger v47-delete-supplier" data-link="${x.id}">Supprimer</button>`:""}</div></td></tr>`});
+      bodyRows.push(totalRow(3,"TOTAL",[cash(sumPurchased),cash(sumPaid),cash(sumRemain)]));
+      content.innerHTML=`<div class="project-page-section-head"><div><h2>Fournisseurs de matériaux</h2><p>Valeurs achetées, versements reçus et soldes calculés automatiquement.</p></div><button id="v47AddSupplier" class="btn primary">+ Ajouter un fournisseur</button></div><div class="project-page-card v47-supplier-table">${table(["Domaine / spécialité","Nom","Contact","Valeur totale achetée","Versement reçu","Versement restant","Actions"],bodyRows)}</div>${pager(view,suppliers.length)}`;
+      $("#v47AddSupplier").onclick=()=>{if(!available.length)return toast("Tous les fournisseurs enregistrés sont déjà affectés à ce projet.",true);modal(`<h2>Ajouter un fournisseur de matériaux · ${esc(p.name)}</h2><form id="v36SupplierForm" data-project="${projectId}"><label>Fournisseur<select name="supplier_id" required><option value="">— Sélectionner —</option>${available.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}${x.specialty?` — ${esc(x.specialty)}`:""}</option>`).join("")}</select></label><label>Notes<textarea name="notes"></textarea></label><button class="btn primary full">Ajouter au projet</button></form>`)};
+      document.querySelectorAll(".v47-edit-supplier").forEach(b=>b.onclick=()=>{const x=(S.data.suppliers||[]).find(sp=>sp.id===b.dataset.id);if(!x)return;modal(`<h2>Modifier le fournisseur</h2><form id="v47SupplierEditForm" data-id="${x.id}" data-project="${projectId}" class="formgrid"><label>Domaine / spécialité<input name="specialty" value="${esc(x.specialty||"")}"></label><label>Nom<input name="name" value="${esc(x.name||"")}" required></label><label>Contact<input name="phone" value="${esc(x.phone||"")}"></label><label>Ville<input name="city" value="${esc(x.city||"")}"></label><label>E-mail<input name="email" type="email" value="${esc(x.email||"")}"></label><label>Adresse<input name="address" value="${esc(x.address||"")}"></label><label class="span2">Notes<textarea name="notes">${esc(x.notes||"")}</textarea></label><button class="btn primary span2">Enregistrer</button></form>`)});
+      document.querySelectorAll(".v47-print-supplier").forEach(b=>b.onclick=()=>{const x=suppliers.find(sp=>sp.supplier_id===b.dataset.id);if(x)printSupplier(x)});
+      document.querySelectorAll(".v47-delete-supplier").forEach(b=>b.onclick=()=>confirmBox("Supprimer ce fournisseur de matériaux du projet ?",async()=>{await post("/api/save",{entity:"project_supplier",action:"delete",record:{id:b.dataset.link,project_id:projectId}});await reload();v36ProjectPage(projectId,"suppliers");toast("Fournisseur retiré du projet")}));
+      bindPager(view,suppliers.length);
+    }
+    if(view==="works"){
+      const rows=slice(view,trades),sumLabor=trades.reduce((a,t)=>a+projectOuvrageLabor(projectId,t),0),sumPaid=trades.reduce((a,t)=>a+workPaid(t.id),0),sumRemain=Math.max(0,sumLabor-sumPaid);
+      const bodyRows=rows.map(t=>{const labor=projectOuvrageLabor(projectId,t),paid=workPaid(t.id),remain=Math.max(0,labor-paid);return `<tr><td><strong>${esc(t.phase||"—")}</strong></td><td>${esc(t.name||"—")}</td><td>${esc(t.provider_name||"—")}</td><td>${esc(t.provider_contact||"—")}</td><td>${esc(t.provider_city||"—")}</td><td class="money">${cash(labor)}</td><td class="money">${cash(paid)}</td><td class="money">${cash(remain)}</td><td class="v38-actions-cell"><div class="actions v38-actions"><button class="btn small secondary v47-edit-work" data-id="${t.id}">Modifier</button><button class="btn small secondary v47-print-work" data-id="${t.id}">Imprimer</button>${S.session.user.role==="admin"?`<button class="btn small danger v47-delete-work" data-id="${t.id}">Supprimer</button>`:""}</div></td></tr>`});
+      bodyRows.push(totalRow(5,"TOTAL",[cash(sumLabor),cash(sumPaid),cash(sumRemain)]));
+      content.innerHTML=`<div class="project-page-section-head"><div><h2>Ouvrages du projet</h2><p>Chaque ouvrage est rattaché à un métier déjà enregistré dans la liste générale.</p></div><button id="v47AddWork" class="btn primary">+ Ajouter un ouvrage</button></div><div class="project-page-card v47-work-table">${table(["Métiers","Domaine / spécialité","Nom","Contact","Ville","Main-d'œuvre","Versement reçu","Versement restant","Actions"],bodyRows)}</div>${pager(view,trades.length)}`;
+      $("#v47AddWork").onclick=()=>{if(!(S.data.tradeCatalog||[]).length)return toast("Enregistrez d'abord le métier dans le menu principal Métiers.",true);modal(`<h2>Ajouter un ouvrage · ${esc(p.name)}</h2>${renderProjectTradeCatalogForm(projectId)}`)};
+      document.querySelectorAll(".v47-edit-work").forEach(b=>b.onclick=()=>{const t=trades.find(x=>x.id===b.dataset.id);if(t)modal(`<h2>Modifier l’ouvrage</h2>${renderProjectTradeCatalogForm(projectId,t)}`)});
+      document.querySelectorAll(".v47-print-work").forEach(b=>b.onclick=()=>{const t=trades.find(x=>x.id===b.dataset.id);if(t)printWork(t)});
+      document.querySelectorAll(".v47-delete-work").forEach(b=>b.onclick=()=>confirmBox("Supprimer cet ouvrage du projet ?",async()=>{await post("/api/save",{entity:"trade",action:"delete",record:{id:b.dataset.id,project_id:projectId}});await reload();v36ProjectPage(projectId,"works");toast("Ouvrage supprimé")}));
+      bindPager(view,trades.length);
+    }
+    if(view==="materials"){
+      const rows=slice(view,expenses),sum=expenses.reduce((a,x)=>a+Number(x.total_price||0),0),bodyRows=rows.map(x=>{const t=trades.find(t=>t.id===x.trade_id);return `<tr><td>${df(x.expense_date)}</td><td><strong>${esc(x.description||"")}</strong></td><td>${esc(x.supplier_name||"—")}</td><td>${esc(t?`${t.phase||""} / ${t.name||""}`:(x.trade_name||"—"))}</td><td class="money">${Number(x.quantity||0).toLocaleString("fr-FR")}${x.unit?` ${esc(x.unit)}`:""}</td><td class="money">${cash(x.unit_price)}</td><td class="money">${cash(x.total_price)}</td><td class="v38-actions-cell"><div class="actions v38-actions"><button class="btn small secondary v47-edit-material" data-id="${x.id}">Modifier</button>${S.session.user.role==="admin"?`<button class="btn small danger v47-delete-material" data-id="${x.id}">Supprimer</button>`:""}</div></td></tr>`});
+      bodyRows.push(`<tr class="project-total-row"><td colspan="6"><strong>TOTAL</strong></td><td class="money"><strong>${cash(sum)}</strong></td><td></td></tr>`);
+      content.innerHTML=`<div class="project-page-section-head"><div><h2>Matériaux fournis</h2><p>Chaque ligne choisit un fournisseur de matériaux et un ouvrage de destination.</p></div><button id="v47AddMaterial" class="btn primary">+ Ajouter des matériaux</button></div><div class="project-page-card v47-material-table">${table(["Date","Désignation","Fournisseurs de matériaux","Destination","Quantité","Prix unité","Prix total","Actions"],bodyRows)}</div>${pager(view,expenses.length)}`;
+      $("#v47AddMaterial").onclick=()=>{if(!suppliers.length)return toast("Ajoutez d'abord un fournisseur de matériaux au projet.",true);if(!trades.length)return toast("Ajoutez d'abord un ouvrage au projet.",true);modal(`<h2>Ajouter des matériaux · ${esc(p.name)}</h2><form id="v36ExpenseForm" data-project="${projectId}" class="formgrid"><label>Date<input name="expense_date" type="date" value="${new Date().toISOString().slice(0,10)}" required></label><label>Désignation<input name="description" required></label><label>Fournisseur de matériaux<select name="supplier_id" required>${supplierOptions("")}</select></label><label>Destination / ouvrage<select name="trade_id" required>${workOptions("")}</select></label><label>Quantité<input name="quantity" type="number" step=".01" min="0" value="1" required></label><label>Unité<input name="unit" placeholder="sac, tonne, unité..."></label><label>Prix unité<input name="unit_price" type="number" min="0" required></label><label>Référence<input name="reference"></label><button class="btn primary span2">Enregistrer</button></form>`)};
+      document.querySelectorAll(".v47-edit-material").forEach(b=>b.onclick=()=>{const x=expenses.find(e=>e.id===b.dataset.id);if(!x)return;modal(`<h2>Modifier les matériaux</h2><form id="v38ExpenseEditForm" data-id="${x.id}" data-project="${projectId}" class="formgrid"><label>Date<input name="expense_date" type="date" value="${esc(x.expense_date||"")}" required></label><label>Désignation<input name="description" value="${esc(x.description||"")}" required></label><label>Fournisseur de matériaux<select name="supplier_id" required>${supplierOptions(x.supplier_id)}</select></label><label>Destination / ouvrage<select name="trade_id" required>${workOptions(x.trade_id)}</select></label><label>Quantité<input name="quantity" type="number" step=".01" min="0" value="${Number(x.quantity||0)}" required></label><label>Unité<input name="unit" value="${esc(x.unit||"")}"></label><label>Prix unité<input name="unit_price" type="number" min="0" value="${Number(x.unit_price||0)}" required></label><label>Référence<input name="reference" value="${esc(x.reference||"")}"></label><button class="btn primary span2">Enregistrer</button></form>`)});
+      document.querySelectorAll(".v47-delete-material").forEach(b=>b.onclick=()=>confirmBox("Supprimer définitivement ces matériaux ?",async()=>{await post("/api/save",{entity:"expense",action:"delete",record:{id:b.dataset.id,project_id:projectId}});await reload();v36ProjectPage(projectId,"materials");toast("Matériaux supprimés")}));
+      bindPager(view,expenses.length);
+    }
+    if(view==="finance"){
+      const supplierDebt=suppliers.reduce((a,x)=>a+Math.max(0,supplierPurchased(x.supplier_id)-supplierPaid(x.supplier_id)),0),workDebt=trades.reduce((a,t)=>a+Math.max(0,projectOuvrageLabor(projectId,t)-workPaid(t.id)),0);
+      const history=payments.map(x=>`<tr><td>${df(x.payment_date)}</td><td>${x.target_type==="supplier"?"Fournisseur de matériaux":"Ouvrage"}</td><td><strong>${esc(x.target_label||"—")}</strong></td><td>${esc(x.payment_method||"—")}</td><td>${esc(x.reference||"—")}</td><td class="money">${cash(x.amount)}</td></tr>`);
+      history.push(`<tr class="project-total-row"><td colspan="5"><strong>TOTAL DES VERSEMENTS</strong></td><td class="money"><strong>${cash(paymentTotal)}</strong></td></tr>`);
+      content.innerHTML=`<div class="project-page-section-head"><div><h2>État financier</h2><p>Résumé automatique de toutes les dépenses et de tous les versements du projet.</p></div></div><div class="finance-summary-grid"><div class="finance-summary-card"><small>Total des dépenses</small><strong>${cash(totalExpense)}</strong><span>Matériaux ${cash(materialTotal)} + main-d'œuvre ${cash(laborTotal)}</span></div><div class="finance-summary-card"><small>Total des versements</small><strong>${cash(paymentTotal)}</strong><span>Paiements enregistrés</span></div><div class="finance-summary-card emphasis"><small>Total reste à payer</small><strong>${cash(totalRemaining)}</strong><span>Fournisseurs ${cash(supplierDebt)} + ouvrages ${cash(workDebt)}</span></div></div><div class="project-page-card"><div class="finance-history-title"><h3>Historique des versements</h3></div>${table(["Date","Section","Bénéficiaire","Mode","Référence","Versement"],history)}</div>`;
     }
   };
   tabs.forEach(b=>b.onclick=()=>show(b.dataset.view));show(initialView);
@@ -773,9 +865,9 @@ document.addEventListener("submit",async e=>{
 document.addEventListener("submit",async e=>{
   const f=e.target;if(!f.id?.startsWith("v36"))return;e.preventDefault();
   try{
-    if(f.id==="v36TradeForm"){await post("/api/save",{entity:"trade",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"trades");toast("Métier ajouté")}
-    else if(f.id==="v36TradeEditForm"){await post("/api/save",{entity:"trade",action:"update",record:{id:f.dataset.id,project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"trades");toast("Métier modifié")}
-    else if(f.id==="v36ExpenseForm"){await post("/api/save",{entity:"expense",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"expenses");toast("Matériaux enregistrés")}
+    if(f.id==="v36TradeForm"){await post("/api/save",{entity:"trade",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"works");toast("Ouvrage ajouté")}
+    else if(f.id==="v36TradeEditForm"){await post("/api/save",{entity:"trade",action:"update",record:{id:f.dataset.id,project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"works");toast("Ouvrage modifié")}
+    else if(f.id==="v36ExpenseForm"){await post("/api/save",{entity:"expense",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"materials");toast("Matériaux enregistrés")}
     else if(f.id==="v36SupplierForm"){await post("/api/save",{entity:"project_supplier",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"suppliers");toast("Fournisseur affecté")}
   }catch(x){toast(x.message,true)}
   finally{releaseForm(f)}
@@ -806,11 +898,23 @@ document.addEventListener("submit",async e=>{
     }else if(f.id==="v38CatalogTradeEditForm"){
       await post("/api/save",{entity:"trade_catalog",action:"update",record:{id:f.dataset.id,...fd(f)}});closeModal();await reload();trades();toast("Métier modifié");
     }else if(f.id==="v38ProjectTradeForm"){
-      await post("/api/save",{entity:"trade",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"trades");toast("Métier ajouté au projet");
+      await post("/api/save",{entity:"trade",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"works");toast("Ouvrage ajouté");
     }else if(f.id==="v38ProjectTradeEditForm"){
-      await post("/api/save",{entity:"trade",action:"update",record:{id:f.dataset.id,project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"trades");toast("Métier modifié");
+      await post("/api/save",{entity:"trade",action:"update",record:{id:f.dataset.id,project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"works");toast("Ouvrage modifié");
     }else if(f.id==="v38ExpenseEditForm"){
-      await post("/api/save",{entity:"expense",action:"update",record:{id:f.dataset.id,project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"expenses");toast("Matériaux modifiés");
+      await post("/api/save",{entity:"expense",action:"update",record:{id:f.dataset.id,project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"materials");toast("Matériaux modifiés");
+    }
+  }catch(x){toast(x.message,true)}finally{releaseForm(f)}
+});
+
+
+document.addEventListener("submit",async e=>{
+  const f=e.target;if(!["v47SupplierEditForm","v47PaymentForm"].includes(f.id))return;e.preventDefault();
+  try{
+    if(f.id==="v47SupplierEditForm"){
+      await post("/api/save",{entity:"supplier",action:"update",record:{id:f.dataset.id,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"suppliers");toast("Fournisseur modifié");
+    }else if(f.id==="v47PaymentForm"){
+      await post("/api/save",{entity:"project_payment",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"finance");toast("Paiement enregistré");
     }
   }catch(x){toast(x.message,true)}finally{releaseForm(f)}
 });
