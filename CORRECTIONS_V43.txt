@@ -1,0 +1,9 @@
+GLOBAL BT V43 — PDF A4 PAYSAGE OBLIGATOIRE / SANS CACHET
+
+1. Toutes les fiches sont générées directement en fichier PDF.
+2. Format physique unique : A4 paysage (841,89 × 595,28 pt).
+3. Toute ancienne orientation portrait est forcée en paysage par le moteur PDF.
+4. Cachet central retiré de toutes les fiches PDF.
+5. Zones Préparé par / Approuvé par conservées.
+6. Modèle corporate, pagination et entêtes de tableaux conservés.
+7. Aucun retour à window.print() ou à l’impression navigateur.

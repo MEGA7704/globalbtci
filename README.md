@@ -380,10 +380,20 @@ Refonte visuelle du popup projet :
 - Tous les boutons d’impression sont renommés **PDF A4**.
 - Suppression de la fenêtre d’impression du navigateur (`window.print`).
 - Un clic génère et télécharge directement un fichier `.pdf`.
-- Format physique PDF : **A4 portrait ou A4 paysage** selon la fiche.
+- Format physique PDF : **A4 paysage obligatoire pour toutes les fiches**.
 - Générateur PDF autonome intégré à l’application : aucune bibliothèque distante/CDN requise.
 - Conservation du modèle corporate V41.1 : entête entreprise, données légales, bandeaux, tableaux, statuts, signatures, cachet et pied de page.
 - Pagination automatique des tableaux longs avec répétition de l’entête du document et de l’entête du tableau.
 - Pagination PDF réelle : `Page X / Y`.
 - Noms de fichiers automatiques contenant le titre du document, éventuellement le code projet, et la date d’édition.
 - L’utilisateur ne peut plus choisir une sortie autre que PDF depuis les boutons d’édition du logiciel.
+
+
+## V43 — PDF A4 paysage obligatoire
+
+- Tous les fichiers générés restent obligatoirement au format **PDF A4**.
+- Orientation unique et obligatoire : **A4 paysage** pour toutes les fiches, listes et rapports.
+- Le moteur PDF ignore toute ancienne demande d’orientation portrait.
+- Le cachet central a été retiré de tous les fichiers PDF.
+- Les zones **Préparé par** et **Approuvé par** sont conservées sans cachet.
+- Le modèle corporate, la pagination, les informations d’entreprise et les tableaux sont conservés.
