@@ -373,3 +373,17 @@ Refonte visuelle du popup projet :
 - Pagination et bandeau de pied vert pétrole/doré.
 - Le nouveau format est automatiquement appliqué aux impressions Projets, Métiers, Matériaux, Fournisseurs, Utilisateurs, Rapports, Tableau de bord et Journal Super Admin.
 - Les informations imprimées sont celles réellement enregistrées dans Mon compte : nom, slogan, téléphone, e-mail, adresse, compte contribuable, RCCM et capital.
+
+
+## V42 — Sortie obligatoire en PDF A4
+
+- Tous les boutons d’impression sont renommés **PDF A4**.
+- Suppression de la fenêtre d’impression du navigateur (`window.print`).
+- Un clic génère et télécharge directement un fichier `.pdf`.
+- Format physique PDF : **A4 portrait ou A4 paysage** selon la fiche.
+- Générateur PDF autonome intégré à l’application : aucune bibliothèque distante/CDN requise.
+- Conservation du modèle corporate V41.1 : entête entreprise, données légales, bandeaux, tableaux, statuts, signatures, cachet et pied de page.
+- Pagination automatique des tableaux longs avec répétition de l’entête du document et de l’entête du tableau.
+- Pagination PDF réelle : `Page X / Y`.
+- Noms de fichiers automatiques contenant le titre du document, éventuellement le code projet, et la date d’édition.
+- L’utilisateur ne peut plus choisir une sortie autre que PDF depuis les boutons d’édition du logiciel.

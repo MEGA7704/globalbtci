@@ -1,0 +1,10 @@
+GLOBAL BT V42 — SORTIE PDF A4 OBLIGATOIRE
+
+1. Tous les imprimés sont générés directement en PDF.
+2. Suppression de window.print() et de la fenêtre d’impression navigateur.
+3. A4 portrait/paysage selon la fiche.
+4. Modèle corporate V41.1 conservé.
+5. Pagination automatique Page X / Y pour les listes longues.
+6. Entêtes de tableaux répétées à chaque nouvelle page.
+7. Téléchargement direct d’un fichier .pdf.
+8. Générateur PDF autonome, sans CDN ni dépendance externe.
