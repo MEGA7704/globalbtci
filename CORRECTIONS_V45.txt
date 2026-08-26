@@ -1,0 +1,10 @@
+GLOBAL BT V45 — CORRECTION CIBLÉE PAGE D'ACCUEIL
+
+- Nouvelle page d'accueil professionnelle inspirée de la maquette validée.
+- Photo fournie par l'utilisateur intégrée comme visuel de présentation.
+- Entête public professionnel avec navigation et boutons Se connecter / S'inscrire.
+- Présentation BTP · Finance · Pilotage, fonctionnalités, sécurité et services.
+- Carte de connexion / inscription existante conservée et restylée.
+- Formulaires et API d'authentification inchangés.
+- Aucun changement sur les données, D1/KV, projets, métiers, matériaux, fournisseurs,
+  abonnements, Super Admin, impressions PDF ou règles métier.
