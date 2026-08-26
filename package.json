@@ -1,8 +1,8 @@
 {
   "name": "global-bt-cloudflare",
-  "version": "41.0.0",
+  "version": "41.1.0",
   "private": true,
-  "description": "GLOBAL BT - Gestion de chantier Cloudflare Pages + D1 + KV - projets numérotés et impressions A4 corporate",
+  "description": "GLOBAL BT - Gestion BTP Cloudflare Pages + D1 + KV - impressions A4 premium adaptées au modèle corporate de référence",
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node --check public/_worker.js && node --check public/app.js",

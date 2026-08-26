@@ -1,0 +1,6 @@
+GLOBAL BT V41.1 — IMPRESSIONS A4 PREMIUM
+
+- Adaptation du modèle fourni à toutes les fiches imprimées.
+- Aucun changement de stockage ni de logique métier.
+- Entête entreprise 3 zones, bandeaux d’information, synthèse, tableaux premium, signatures, cachet, pagination et footer corporate.
+- Données entreprise dynamiques depuis Paramètres > Mon compte.

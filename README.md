@@ -357,3 +357,19 @@ Refonte visuelle du popup projet :
 - Pied de page corporate avec total du document et pagination.
 - Les fiches liées à un projet reprennent automatiquement le nom et le code du projet.
 - Dans Paramètres > Mon compte : ajout de Slogan, Compte contribuable, RCCM et Capital social.
+
+
+## V41.1 — Fiches imprimées premium selon le modèle de référence
+
+- Refonte du gabarit commun `printA4()` sans toucher aux données ni aux règles métier.
+- Entête en trois zones : identité entreprise, coordonnées, informations légales.
+- Logo BTP vectoriel intégré au document (aucun fichier image externe requis).
+- Titre central avec séparateurs et accents dorés.
+- Bandeau supérieur : date d’édition, imprimé par, portefeuille/contexte et total.
+- Bloc de synthèse : entreprise ou projet, période/code projet et statut.
+- Tableaux à entête vert foncé, bordures fines et alignement renforcé.
+- Statuts de projets présentés sous forme de pastilles dans les impressions concernées.
+- Zone de signatures Préparé par / Approuvé par avec cachet corporate central.
+- Pagination et bandeau de pied vert pétrole/doré.
+- Le nouveau format est automatiquement appliqué aux impressions Projets, Métiers, Matériaux, Fournisseurs, Utilisateurs, Rapports, Tableau de bord et Journal Super Admin.
+- Les informations imprimées sont celles réellement enregistrées dans Mon compte : nom, slogan, téléphone, e-mail, adresse, compte contribuable, RCCM et capital.
