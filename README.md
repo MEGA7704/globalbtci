@@ -343,3 +343,17 @@ Refonte visuelle du popup projet :
 - Super Admin : actions **Activer** / **Rejeter** avec note support.
 - Activation validée : recalcul automatique de la date de début et d’expiration selon la formule.
 - Protection anti-double demande et anti-réutilisation d’un ID de transaction.
+
+
+## V41 — Numérotation des projets et impressions corporate
+
+- Chaque nouveau projet reçoit automatiquement un numéro au format `PRJ-AAAA-001`.
+- Les anciens projets sans numéro sont numérotés automatiquement au premier démarrage V41.
+- La liste des projets affiche : N° projet, nom, type, localité, maître d’ouvrage, responsable, dates, statut et actions.
+- Recherche des projets par statut, nom ou N° projet.
+- Les actions de la liste des projets sont centrées.
+- Nouveau modèle d’impression A4 commun, en portrait ou paysage selon le document.
+- Entête alimentée par le compte de l’entreprise : nom, slogan, téléphone, e-mail, adresse, compte contribuable, RCCM et capital.
+- Pied de page corporate avec total du document et pagination.
+- Les fiches liées à un projet reprennent automatiquement le nom et le code du projet.
+- Dans Paramètres > Mon compte : ajout de Slogan, Compte contribuable, RCCM et Capital social.

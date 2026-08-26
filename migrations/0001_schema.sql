@@ -8,7 +8,11 @@ CREATE TABLE IF NOT EXISTS companies (
   email TEXT,
   city TEXT,
   address TEXT,
-  plan TEXT NOT NULL DEFAULT 'free' CHECK(plan IN ('free','business')),
+  slogan TEXT,
+  taxpayer_account TEXT,
+  rccm TEXT,
+  capital INTEGER NOT NULL DEFAULT 0,
+  plan TEXT NOT NULL DEFAULT 'free' CHECK(plan IN ('free','standard','business')),
   plan_started_at TEXT NOT NULL,
   plan_expires_at TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled','deleted')),
@@ -43,6 +47,7 @@ CREATE TABLE IF NOT EXISTS user_credentials (
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
   company_id TEXT NOT NULL,
+  project_number TEXT,
   name TEXT NOT NULL,
   project_type TEXT,
   location TEXT,
@@ -51,7 +56,7 @@ CREATE TABLE IF NOT EXISTS projects (
   budget INTEGER NOT NULL DEFAULT 0,
   start_date TEXT,
   end_date TEXT,
-  status TEXT NOT NULL DEFAULT 'in_progress' CHECK(status IN ('preparation','in_progress','suspended','completed')),
+  status TEXT NOT NULL DEFAULT 'in_progress' CHECK(status IN ('preparation','in_progress','suspended','completed','closed')),
   description TEXT,
   created_by TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -152,6 +157,7 @@ CREATE TABLE IF NOT EXISTS app_meta (
 
 CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id);
 CREATE INDEX IF NOT EXISTS idx_projects_company ON projects(company_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_company_project_number ON projects(company_id, project_number) WHERE project_number IS NOT NULL AND project_number<>'';
 CREATE INDEX IF NOT EXISTS idx_trades_company_project ON trades(company_id, project_id);
 CREATE INDEX IF NOT EXISTS idx_suppliers_company ON suppliers(company_id);
 CREATE INDEX IF NOT EXISTS idx_expenses_company_date ON expenses(company_id, expense_date);

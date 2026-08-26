@@ -1,0 +1,43 @@
+GLOBAL BT V41.0.0 — PROJETS & IMPRESSIONS A4 CORPORATE
+
+1. Numéro automatique de projet
+- Format : PRJ-AAAA-001.
+- Séquence indépendante par entreprise et par année.
+- Les anciens projets sans numéro sont repris automatiquement.
+- Le numéro n'est pas modifiable dans le formulaire projet.
+
+2. Liste des projets
+Colonnes :
+- N° projet
+- Nom du projet
+- Type
+- Localité
+- Maître d'ouvrage
+- Responsable
+- Date début / Date fin
+- Statut
+- Actions centrées
+
+Recherche instantanée par :
+- statut
+- nom du projet
+- N° projet
+
+3. Impressions A4
+- Modèle corporate premium commun à tous les appels printA4.
+- Orientation portrait ou paysage selon le contenu.
+- Entête entreprise : logo BTP vectoriel, nom, Gestion BTP Professionnelle,
+  slogan, téléphone, email, adresse, compte contribuable, RCCM et capital.
+- Titre central, séparateur doré, bloc d'informations, tableau vert foncé,
+  pagination, total et pied de page corporate.
+- Liste des projets en paysage.
+- Fiches Métiers, Matériaux, Fournisseurs du projet avec Projet + Code projet.
+- Listes générales Métiers, Fournisseurs, Utilisateurs et Rapports harmonisées.
+
+4. Mon compte
+Champs ajoutés :
+- Slogan
+- Compte contribuable
+- RCCM
+- Capital social
+Ces informations alimentent automatiquement les documents imprimés.
