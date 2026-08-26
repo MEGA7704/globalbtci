@@ -1,0 +1,8 @@
+GLOBAL BT V44.0.0 — CORRECTION TITRES PDF
+
+- Tous les PDF restent obligatoirement en A4 paysage.
+- Suppression de la largeur fixe de 180 pt qui tronquait les titres.
+- Titre complet, centré, sur une seule ligne, sans points de suspension.
+- Traits dorés gauche/droite flexibles et calculés selon la largeur du titre.
+- Ajustement automatique de la taille de police uniquement pour les titres exceptionnellement longs.
+- Correction centralisée : appliquée à tous les PDF générés par le moteur corporate.

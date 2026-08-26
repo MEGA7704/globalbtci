@@ -1,8 +1,8 @@
 {
   "name": "global-bt-cloudflare",
-  "version": "43.0.0",
+  "version": "44.0.0",
   "private": true,
-  "description": "GLOBAL BT - Gestion BTP Cloudflare Pages + D1 + KV - sortie PDF A4 paysage obligatoire avec modèle corporate premium sans cachet",
+  "description": "GLOBAL BT - Gestion BTP Cloudflare Pages + D1 + KV - sortie PDF A4 paysage obligatoire, titres complets responsifs et modèle corporate premium sans cachet",
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node --check public/_worker.js && node --check public/app.js",

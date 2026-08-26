@@ -389,7 +389,7 @@ Refonte visuelle du popup projet :
 - L’utilisateur ne peut plus choisir une sortie autre que PDF depuis les boutons d’édition du logiciel.
 
 
-## V43 — PDF A4 paysage obligatoire
+## V44 — PDF A4 paysage obligatoire
 
 - Tous les fichiers générés restent obligatoirement au format **PDF A4**.
 - Orientation unique et obligatoire : **A4 paysage** pour toutes les fiches, listes et rapports.
@@ -397,3 +397,10 @@ Refonte visuelle du popup projet :
 - Le cachet central a été retiré de tous les fichiers PDF.
 - Les zones **Préparé par** et **Approuvé par** sont conservées sans cachet.
 - Le modèle corporate, la pagination, les informations d’entreprise et les tableaux sont conservés.
+
+
+## Correction V44 — titres PDF responsifs
+- Tous les titres PDF sont affichés intégralement sur une seule ligne.
+- Les traits dorés gauche/droite s’adaptent automatiquement à la largeur réelle du titre.
+- La taille du titre se réduit uniquement si nécessaire, sans troncature ni points de suspension.
+- La correction s’applique au gabarit PDF commun, donc à tous les PDF A4 paysage.
