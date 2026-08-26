@@ -127,6 +127,7 @@ async function ensureSchema(env){
 `CREATE TABLE IF NOT EXISTS project_payments(id TEXT PRIMARY KEY,company_id TEXT NOT NULL,project_id TEXT NOT NULL,target_type TEXT NOT NULL,target_id TEXT NOT NULL,target_label TEXT,payment_date TEXT NOT NULL,amount INTEGER NOT NULL DEFAULT 0,payment_method TEXT,reference TEXT,notes TEXT,created_by TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 `CREATE TABLE IF NOT EXISTS password_reset_requests(id TEXT PRIMARY KEY,company_id TEXT,user_id TEXT,email TEXT NOT NULL,target_role TEXT,status TEXT NOT NULL DEFAULT 'pending',requested_ip TEXT,handled_by TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,handled_at TEXT)`,
 `CREATE TABLE IF NOT EXISTS subscription_activation_requests(id TEXT PRIMARY KEY,company_id TEXT NOT NULL,requested_by TEXT NOT NULL,requested_plan TEXT NOT NULL,payment_phone TEXT NOT NULL,transaction_id TEXT NOT NULL UNIQUE,status TEXT NOT NULL DEFAULT 'pending',handled_by TEXT,support_note TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,handled_at TEXT)`,
+`CREATE TABLE IF NOT EXISTS account_closure_requests(id TEXT PRIMARY KEY,company_id TEXT NOT NULL,requested_by TEXT NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',handled_by TEXT,support_note TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,handled_at TEXT)`,
 `CREATE TABLE IF NOT EXISTS audit_logs(id TEXT PRIMARY KEY,company_id TEXT,actor_user_id TEXT,action TEXT NOT NULL,target_type TEXT,target_id TEXT,ip TEXT,metadata_json TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 `CREATE TABLE IF NOT EXISTS app_meta(key TEXT PRIMARY KEY,value TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`
   ];
@@ -250,6 +251,16 @@ async function ensureSchema(env){
   await ensureColumn(env,"subscription_activation_requests","support_note","TEXT");
   await ensureColumn(env,"subscription_activation_requests","created_at","TEXT");
   await ensureColumn(env,"subscription_activation_requests","handled_at","TEXT");
+
+  // V48 : demandes sécurisées de fermeture de compte transmises au support.
+  await ensureColumn(env,"account_closure_requests","company_id","TEXT");
+  await ensureColumn(env,"account_closure_requests","requested_by","TEXT");
+  await ensureColumn(env,"account_closure_requests","reason","TEXT");
+  await ensureColumn(env,"account_closure_requests","status","TEXT NOT NULL DEFAULT 'pending'");
+  await ensureColumn(env,"account_closure_requests","handled_by","TEXT");
+  await ensureColumn(env,"account_closure_requests","support_note","TEXT");
+  await ensureColumn(env,"account_closure_requests","created_at","TEXT");
+  await ensureColumn(env,"account_closure_requests","handled_at","TEXT");
 
   await ensureColumn(env,"audit_logs","company_id","TEXT");
   await ensureColumn(env,"audit_logs","actor_user_id","TEXT");
@@ -500,11 +511,26 @@ async function fail(env,addr,mail){for(const k of [`rl:ip:${addr}`,`rl:acct:${em
 async function clearFail(env,addr,mail){await Promise.all([env.GLOBAL_BT_KV.delete(`rl:ip:${addr}`),env.GLOBAL_BT_KV.delete(`rl:acct:${email(mail)}`)])}
 async function sessionKey(env,t){return "sess:"+await sha(`${t}:${env.SESSION_PEPPER||""}`)}
 async function makeSession(env,u){const t=hex(bytes(32)),csrf=hex(bytes(24)),key=await sessionKey(env,t);await env.GLOBAL_BT_KV.put(key,JSON.stringify({userId:u.id,passwordVersion:Number(u.password_version||1),csrf}),{expirationTtl:SESSION_TTL});return {t,csrf}}
+async function applyExpiredPaidPlanFree(env,company){
+  if(!company||company.status!=="active")return company;
+  const plan=String(company.plan||"free").toLowerCase();
+  const expiredAt=Date.parse(company.plan_expires_at||"");
+  if(!["standard","business"].includes(plan)||!Number.isFinite(expiredAt)||expiredAt>Date.now())return company;
+  const freeStart=company.plan_expires_at;
+  const freeEnd=new Date(expiredAt+10*24*60*60*1000).toISOString();
+  const updated=await env.DB.prepare("UPDATE companies SET plan='free',plan_started_at=?,plan_expires_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND lower(plan) IN ('standard','business') AND plan_expires_at=?")
+    .bind(freeStart,freeEnd,company.id,company.plan_expires_at).run();
+  if(Number(updated?.meta?.changes||0)>0){
+    await audit(env,{id:null,company_id:company.id},"AUTO_DOWNGRADE_TO_FREE","company",company.id,null,{previous_plan:plan,free_started_at:freeStart,free_expires_at:freeEnd});
+    return {...company,plan:"free",plan_started_at:freeStart,plan_expires_at:freeEnd};
+  }
+  return await env.DB.prepare("SELECT id,name,code,phone,email,city,address,slogan,taxpayer_account,rccm,capital,plan,plan_started_at,plan_expires_at,status FROM companies WHERE id=?").bind(company.id).first()||company;
+}
 async function getSession(req,env){
   const t=cookie(req,"gbt_session");if(!t)return null;const key=await sessionKey(env,t),s=await env.GLOBAL_BT_KV.get(key,"json");if(!s)return null;
   const u=await env.DB.prepare("SELECT id,company_id,email,full_name,phone,role,status,password_version,must_change_password FROM users WHERE id=?").bind(s.userId).first();
   if(!u||u.status!=="active"||Number(u.password_version)!==Number(s.passwordVersion)){await env.GLOBAL_BT_KV.delete(key);return null}
-  let c=null;if(u.company_id){c=await env.DB.prepare("SELECT id,name,code,phone,email,city,address,slogan,taxpayer_account,rccm,capital,plan,plan_started_at,plan_expires_at,status FROM companies WHERE id=?").bind(u.company_id).first();if(!c||c.status!=="active")return null}
+  let c=null;if(u.company_id){c=await env.DB.prepare("SELECT id,name,code,phone,email,city,address,slogan,taxpayer_account,rccm,capital,plan,plan_started_at,plan_expires_at,status FROM companies WHERE id=?").bind(u.company_id).first();if(!c||c.status!=="active")return null;c=await applyExpiredPaidPlanFree(env,c)}
   return {t,key,s,u,c};
 }
 function csrf(req,s){return !!s?.s?.csrf&&req.headers.get("X-CSRF-Token")===s.s.csrf}
@@ -554,11 +580,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"42.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"48.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"42.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"48.0.0"},500);
   }
 }
 async function login(req,env){
@@ -616,6 +642,7 @@ async function login(req,env){
   if(u.company_id){
     c=await env.DB.prepare("SELECT id,name,code,phone,email,city,address,slogan,taxpayer_account,rccm,capital,plan,plan_started_at,plan_expires_at,status FROM companies WHERE id=?").bind(u.company_id).first();
     if(!c||c.status!=="active")return json({error:"Entreprise désactivée"},403);
+    c=await applyExpiredPaidPlanFree(env,c);
     if(Date.parse(c.plan_expires_at)<=Date.now())return json({error:"Abonnement expiré"},403);
   }
 
@@ -768,7 +795,7 @@ async function load(req,env){
   const a=await auth(req,env);if(a.error)return a.error;const s=a.s;
   if(!await requireSchemaReady(env))return json({error:"Base non initialisée",code:"SCHEMA_NOT_READY"},503);
   if(s.u.role==="superadmin"){
-    const [companies,users,resets,subscriptionRequests,logs]=await Promise.all([
+    const [companies,users,resets,subscriptionRequests,closureRequests,logs]=await Promise.all([
       env.DB.prepare("SELECT id,name,city,plan,plan_started_at,plan_expires_at,status,created_at FROM companies WHERE status!='deleted' ORDER BY created_at DESC").all(),
       env.DB.prepare(`SELECT u.id,u.company_id,u.email,u.full_name,u.phone,u.role,u.status,u.created_at,c.name company_name
         FROM users u LEFT JOIN companies c ON c.id=u.company_id
@@ -779,6 +806,11 @@ async function load(req,env){
         JOIN companies c ON c.id=sr.company_id
         LEFT JOIN users u ON u.id=sr.requested_by
         ORDER BY CASE sr.status WHEN 'pending' THEN 0 ELSE 1 END,sr.created_at DESC LIMIT 400`).all(),
+      env.DB.prepare(`SELECT cr.*,c.name company_name,u.full_name requester_name,u.email requester_email
+        FROM account_closure_requests cr
+        JOIN companies c ON c.id=cr.company_id
+        LEFT JOIN users u ON u.id=cr.requested_by
+        ORDER BY CASE cr.status WHEN 'pending' THEN 0 ELSE 1 END,cr.created_at DESC LIMIT 300`).all(),
       env.DB.prepare("SELECT a.*,u.full_name actor_name,c.name company_name FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_user_id LEFT JOIN companies c ON c.id=a.company_id ORDER BY a.created_at DESC LIMIT 400").all()
     ]);
     const outUsers=[];
@@ -787,10 +819,10 @@ async function load(req,env){
       if(!ready) ready=!!(await getMemberCredentialKV(env,u.id));
       outUsers.push({...u,credential_ready:ready?1:0});
     }
-    return json({mode:"superadmin",companies:companies.results,users:outUsers,resets:resets.results,subscriptionRequests:subscriptionRequests.results,logs:logs.results});
+    return json({mode:"superadmin",companies:companies.results,users:outUsers,resets:resets.results,subscriptionRequests:subscriptionRequests.results,closureRequests:closureRequests.results,logs:logs.results});
   }
   const c=s.u.company_id;
-  const [projects,tradeCatalog,trades,suppliers,projectSuppliers,expenses,labor,payments,users,resets,subscriptionRequests]=await Promise.all([
+  const [projects,tradeCatalog,trades,suppliers,projectSuppliers,expenses,labor,payments,users,resets,subscriptionRequests,closureRequests]=await Promise.all([
     env.DB.prepare("SELECT * FROM projects WHERE company_id=? ORDER BY created_at DESC").bind(c).all(),
     env.DB.prepare("SELECT * FROM trade_catalog WHERE company_id=? ORDER BY phase,name").bind(c).all(),
     env.DB.prepare("SELECT * FROM trades WHERE company_id=? ORDER BY name").bind(c).all(),
@@ -802,13 +834,14 @@ async function load(req,env){
     s.u.role==="admin"?env.DB.prepare(`SELECT u.id,u.email,u.full_name,u.phone,u.role,u.status,u.created_at
       FROM users u WHERE u.company_id=? AND u.status!='deleted' ORDER BY u.created_at DESC`).bind(c).all():Promise.resolve({results:[]}),
     s.u.role==="admin"?env.DB.prepare("SELECT r.*,u.full_name FROM password_reset_requests r LEFT JOIN users u ON u.id=r.user_id WHERE r.company_id=? AND r.target_role='agent' ORDER BY r.created_at DESC LIMIT 200").bind(c).all():Promise.resolve({results:[]}),
-    s.u.role==="admin"?env.DB.prepare("SELECT id,requested_plan,payment_phone,transaction_id,status,support_note,created_at,handled_at FROM subscription_activation_requests WHERE company_id=? ORDER BY created_at DESC LIMIT 30").bind(c).all():Promise.resolve({results:[]})
+    s.u.role==="admin"?env.DB.prepare("SELECT id,requested_plan,payment_phone,transaction_id,status,support_note,created_at,handled_at FROM subscription_activation_requests WHERE company_id=? ORDER BY created_at DESC LIMIT 30").bind(c).all():Promise.resolve({results:[]}),
+    s.u.role==="admin"?env.DB.prepare("SELECT id,reason,status,support_note,created_at,handled_at FROM account_closure_requests WHERE company_id=? ORDER BY created_at DESC LIMIT 20").bind(c).all():Promise.resolve({results:[]})
   ]);
   const outUsers=[];
   for(const u of users.results||[]){
     outUsers.push({...u,credential_ready:(await getMemberCredentialKV(env,u.id))?1:0});
   }
-  return json({mode:"company",projects:projects.results,tradeCatalog:tradeCatalog.results,trades:trades.results,suppliers:suppliers.results,projectSuppliers:projectSuppliers.results,expenses:expenses.results,labor:labor.results,payments:payments.results,users:outUsers,resets:resets.results,subscriptionRequests:subscriptionRequests.results});
+  return json({mode:"company",projects:projects.results,tradeCatalog:tradeCatalog.results,trades:trades.results,suppliers:suppliers.results,projectSuppliers:projectSuppliers.results,expenses:expenses.results,labor:labor.results,payments:payments.results,users:outUsers,resets:resets.results,subscriptionRequests:subscriptionRequests.results,closureRequests:closureRequests.results});
 }
 
 async function save(req,env){
@@ -868,6 +901,22 @@ async function saveCompany(req,env,s,entity,action,r){
       .bind(adminName,adminEmail,text(r.admin_phone,50),actor.id,c).run();
     await audit(env,actor,"UPDATE_ACCOUNT","company",c,ip(req));
     return json({ok:true});
+  }
+
+  if(entity==="account_closure"){
+    if(actor.role!=="admin")return json({error:"Demande réservée à l'Administrateur"},403);
+    const denied=await adminPasswordGate(env,s,r.admin_password);if(denied)return denied;
+    if(action==="verify")return json({ok:true,verified:true});
+    if(action==="create"){
+      const reason=text(r.reason,1500);
+      if(reason.length<5)return json({error:"Indiquez le motif de la demande de fermeture"},400);
+      const pending=await env.DB.prepare("SELECT id FROM account_closure_requests WHERE company_id=? AND status='pending' LIMIT 1").bind(c).first();
+      if(pending)return json({error:"Une demande de fermeture est déjà en attente de traitement par le support."},409);
+      const id=crypto.randomUUID();
+      await env.DB.prepare("INSERT INTO account_closure_requests(id,company_id,requested_by,reason,status) VALUES(?,?,?,?,'pending')").bind(id,c,actor.id,reason).run();
+      await audit(env,actor,"ACCOUNT_CLOSURE_REQUEST","account_closure_request",id,ip(req));
+      return json({ok:true,id,message:"Demande de fermeture envoyée au support"});
+    }
   }
 
   if(entity==="subscription_request"&&action==="create"){
@@ -1095,6 +1144,17 @@ async function saveSuper(req,env,s,entity,action,r){
       return json({ok:true});
     }
   }
+  if(entity==="account_closure"){
+    const request=await env.DB.prepare("SELECT * FROM account_closure_requests WHERE id=?").bind(r.id).first();
+    if(!request)return json({error:"Demande de fermeture introuvable"},404);
+    if(request.status!=="pending")return json({error:"Cette demande a déjà été traitée"},409);
+    if(action==="resolve"||action==="reject"){
+      const status=action==="resolve"?"resolved":"rejected";
+      await env.DB.prepare("UPDATE account_closure_requests SET status=?,handled_by=?,support_note=?,handled_at=CURRENT_TIMESTAMP WHERE id=?").bind(status,actor.id,text(r.support_note,500),request.id).run();
+      await audit(env,actor,action==="resolve"?"RESOLVE_ACCOUNT_CLOSURE_REQUEST":"REJECT_ACCOUNT_CLOSURE_REQUEST","account_closure_request",request.id,ip(req),{company_id:request.company_id});
+      return json({ok:true});
+    }
+  }
   if(entity==="reset"&&action==="reject"){await env.DB.prepare("UPDATE password_reset_requests SET status='rejected',handled_by=?,handled_at=CURRENT_TIMESTAMP WHERE id=?").bind(actor.id,r.id).run();return json({ok:true})}
   return json({error:"Action Super Admin non autorisée"},403);
 }
@@ -1124,7 +1184,7 @@ async function cryptoHealth(req,env){
     const test=await makeMemberCredential("GlobalBT-Test-2026!");
     return json({
       ok:true,
-      app_version:"42.0.0",
+      app_version:"48.0.0",
       algorithm:"PBKDF2-SHA-256",
       iterations:test.password_iterations,
       elapsed_ms:Date.now()-started
@@ -1132,7 +1192,7 @@ async function cryptoHealth(req,env){
   }catch(e){
     return json({
       ok:false,
-      app_version:"42.0.0",
+      app_version:"48.0.0",
       code:e?.message||"PASSWORD_HASH_FAILED",
       elapsed_ms:Date.now()-started
     },500);
@@ -1166,7 +1226,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"42.0.0",
+    app_version:"48.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,

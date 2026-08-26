@@ -45,6 +45,14 @@ Version consolidée, conçue pour éviter de publier les secrets dans GitHub.
 - La demande apparaît dans **Super Admin > Abonnements**, où elle peut être activée ou rejetée.
 - Un plan Standard ou Business encore actif bloque toute nouvelle demande et tout nouveau bouton de paiement.
 - Une demande en attente bloque également toute nouvelle transmission/paiement dans l’interface.
+- À l’expiration d’un plan Standard ou Business, le compte bascule automatiquement en Free pour 10 jours à compter de la date d’expiration. Le Free expiré ne se renouvelle pas automatiquement.
+
+## Fermeture de compte
+
+- L’Administrateur peut envoyer une demande de fermeture depuis **Paramètres**.
+- Le clic est protégé par le mot de passe Administrateur, revérifié côté serveur.
+- Le motif est obligatoire et la demande est transmise au support / Super Admin.
+- La demande ne supprime pas automatiquement le compte.
 
 ## Super Admin — secret hors GitHub
 

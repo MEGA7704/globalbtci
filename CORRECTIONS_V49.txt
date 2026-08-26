@@ -1,0 +1,21 @@
+GLOBAL BT V49 — CORRECTIONS CIBLÉES
+
+1. PDF A4 paysage
+- L’en-tête corporate complet est affiché uniquement sur la première page.
+- Les pages suivantes continuent directement le contenu, avec pagination/footer.
+- Les en-têtes de colonnes des tableaux restent répétés si un tableau se poursuit, pour conserver la lisibilité.
+
+2. Sections Projet
+- Fournisseurs de matériaux : bouton d’impression de la liste générale complète du projet.
+- Ouvrages : bouton d’impression de la liste générale complète du projet.
+- Matériaux fournis : bouton d’impression de la liste générale complète du projet.
+- État financier : bouton d’impression PDF A4 du résumé + historique des versements.
+- Toutes les impressions utilisent l’ensemble des données du projet, pas uniquement la page visible.
+
+3. Paiements
+- Suppression du bouton Faire un payement de la barre des onglets du projet.
+- Ajout du bouton Faire un paiement directement dans la section État financier.
+
+4. Tableaux
+- Uniformisation globale des bordures de lignes et colonnes.
+- En-têtes centrés, textes justifiés/alignés, montants à droite, actions centrées et alignement vertical homogène.
