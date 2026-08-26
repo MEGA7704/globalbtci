@@ -1,0 +1,9 @@
+GLOBAL BT — V46 — Correction ciblée accueil/menu
+
+- Page d'accueil utilisée en pleine largeur, sans largeur maximale fixe.
+- Menu horizontal non connecté : Accueil uniquement.
+- Suppression du menu horizontal : Fonctionnalités, Solutions, Tarifs, À propos, Contact.
+- Menu connecté : Accueil ajouté avant les boutons propres au rôle.
+- Accueil reste accessible sans déconnexion et conserve la session active.
+- Sur l'accueil connecté, le formulaire Connexion/Inscription est masqué.
+- Backend Worker, migrations D1, données, PDF et règles métier inchangés.

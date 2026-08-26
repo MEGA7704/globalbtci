@@ -259,8 +259,30 @@ async function init(){
 }
 async function enter(){$("#authScreen").classList.add("hidden");$("#landingNav")?.classList.add("hidden");$("#landingActions")?.classList.add("hidden");$("#landingBrand")?.classList.add("hidden");$("#appBrand")?.classList.remove("hidden");document.querySelector(".topbar")?.classList.remove("landing-topbar");$("#appShell").classList.remove("hidden");enterHeader();$("#spaceLabel").textContent=S.session.user.role==="superadmin"?"SUPER ADMINISTRATION":"ESPACE ENTREPRISE";nav();await reload();go(S.session.user.role==="superadmin"?"super":"dashboard");if(S.session.user.must_change_password)changePassword()}
 async function reload(){S.data=await api("/api/load")}
-function nav(){const superA=S.session.user.role==="superadmin",admin=S.session.user.role==="admin";const n=superA?[["super","Tableau de bord"],["companies","Entreprises"],["members","Membres"],["subscriptions","Abonnements"],["resets","Mots de passe"],["audit","Journal"]]:[["dashboard","Tableau de bord"],["projects","Projets"],["expenses","Matériaux"],["labor","Main-d'œuvre"],["trades","Métiers"],["suppliers","Fournisseurs"],["reports","Rapports"],...(admin?[["users","Utilisateurs"]]:[]),["settings","Paramètres"]];$("#mainNav").innerHTML=n.map(([i,l])=>`<button data-nav="${i}">${l}</button>`).join("")+`<button id="logout" class="logout">Déconnexion</button>`;$("#mainNav").classList.remove("hidden");document.querySelectorAll("[data-nav]").forEach(b=>b.onclick=()=>go(b.dataset.nav));$("#logout").onclick=async()=>{try{await post("/api/logout",{})}catch{}location.reload()}}
-function go(v){S.view=v;document.querySelectorAll("[data-nav]").forEach(b=>b.classList.toggle("active",b.dataset.nav===v));$("#pageTitle").textContent=names[v]||"GLOBAL BT";$("#pageSub").textContent=S.session.company?.name||"Administration générale";render();if(S.session.company?.plan==="free")promo()}
+function nav(){const superA=S.session.user.role==="superadmin",admin=S.session.user.role==="admin";const n=superA?[["home","Accueil"],["super","Tableau de bord"],["companies","Entreprises"],["members","Membres"],["subscriptions","Abonnements"],["resets","Mots de passe"],["audit","Journal"]]:[["home","Accueil"],["dashboard","Tableau de bord"],["projects","Projets"],["expenses","Matériaux"],["labor","Main-d'œuvre"],["trades","Métiers"],["suppliers","Fournisseurs"],["reports","Rapports"],...(admin?[["users","Utilisateurs"]]:[]),["settings","Paramètres"]];$("#mainNav").innerHTML=n.map(([i,l])=>`<button data-nav="${i}">${l}</button>`).join("")+`<button id="logout" class="logout">Déconnexion</button>`;$("#mainNav").classList.remove("hidden");document.querySelectorAll("[data-nav]").forEach(b=>b.onclick=()=>go(b.dataset.nav));$("#logout").onclick=async()=>{try{await post("/api/logout",{})}catch{}location.reload()}}
+function go(v){
+  S.view=v;
+  document.querySelectorAll("[data-nav]").forEach(b=>b.classList.toggle("active",b.dataset.nav===v));
+  if(v==="home"){
+    $("#appShell").classList.add("hidden");
+    $("#authScreen").classList.remove("hidden");
+    $("#authScreen").classList.add("connected-home");
+    $("#landingNav")?.classList.add("hidden");
+    $("#landingActions")?.classList.add("hidden");
+    $("#landingBrand")?.classList.add("hidden");
+    $("#appBrand")?.classList.remove("hidden");
+    document.querySelector(".topbar")?.classList.remove("landing-topbar");
+    window.scrollTo({top:0,behavior:"smooth"});
+    return;
+  }
+  $("#authScreen").classList.add("hidden");
+  $("#authScreen").classList.remove("connected-home");
+  $("#appShell").classList.remove("hidden");
+  $("#pageTitle").textContent=names[v]||"GLOBAL BT";
+  $("#pageSub").textContent=S.session.company?.name||"Administration générale";
+  render();
+  if(S.session.company?.plan==="free")promo();
+}
 function render(){if(S.session.user.role==="superadmin")return renderSuper();({dashboard,projects,expenses,labor,trades,suppliers,users,reports,settings}[S.view]||dashboard)()}
 function dashboard(){
   const p=S.data.projects||[],e=S.data.expenses||[],l=S.data.labor||[],tr=S.data.trades||[];
@@ -595,7 +617,7 @@ function superAudit(){$("#content").innerHTML=`<div class="panel"><div class="pa
 /* ===== V27 PROJETS CENTRALISÉS ===== */
 function nav(){
   const superA=S.session.user.role==="superadmin",admin=S.session.user.role==="admin";
-  const n=superA?[["super","Tableau de bord"],["companies","Entreprises"],["members","Membres"],["subscriptions","Abonnements"],["resets","Mots de passe"],["audit","Journal"]]:[["dashboard","Tableau de bord"],["projects","Projets"],["trades","Métiers"],["suppliers","Fournisseurs"],["reports","Rapports"],...(admin?[["users","Utilisateurs"]]:[]),["settings","Paramètres"]];
+  const n=superA?[["home","Accueil"],["super","Tableau de bord"],["companies","Entreprises"],["members","Membres"],["subscriptions","Abonnements"],["resets","Mots de passe"],["audit","Journal"]]:[["home","Accueil"],["dashboard","Tableau de bord"],["projects","Projets"],["trades","Métiers"],["suppliers","Fournisseurs"],["reports","Rapports"],...(admin?[["users","Utilisateurs"]]:[]),["settings","Paramètres"]];
   $("#mainNav").innerHTML=n.map(([i,l])=>`<button data-nav="${i}">${l}</button>`).join("")+`<button id="logout" class="logout">Déconnexion</button>`;
   $("#mainNav").classList.remove("hidden");document.querySelectorAll("[data-nav]").forEach(b=>b.onclick=()=>go(b.dataset.nav));$("#logout").onclick=async()=>{try{await post("/api/logout",{})}catch{}location.reload()};
 }
