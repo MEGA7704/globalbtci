@@ -351,12 +351,12 @@ function dashboard(){
   const monthSpend=monthMat+monthLab;
 
   const projectRows=p.map(pr=>{
-    const pm=e.filter(x=>x.project_id===pr.id).reduce((a,x)=>a+Number(x.total_price||0),0);
-    const pl=l.filter(x=>x.project_id===pr.id).reduce((a,x)=>a+Number(x.amount||0),0);
-    const spent=pm+pl;
+    const materials=e.filter(x=>x.project_id===pr.id).reduce((a,x)=>a+Number(x.total_price||0),0);
+    const ouvrages=tr.filter(x=>x.project_id===pr.id).reduce((a,t)=>a+projectOuvrageLabor(pr.id,t),0);
+    const spent=materials+ouvrages;
     const b=Number(pr.budget||0);
     const pct=b>0?Math.round(spent*100/b):0;
-    return {...pr,spent,pct,remaining:b-spent};
+    return {...pr,materials,ouvrages,spent,pct,remaining:b-spent};
   }).sort((a,b)=>b.spent-a.spent);
 
   const byTrade=tr.map(t=>{
@@ -463,12 +463,13 @@ function dashboard(){
         <div><h2>Performance des projets</h2><p class="muted">Budget, matériaux et taux de consommation par chantier</p></div>
         <button id="v41PrintDashboard" class="btn secondary">PDF A4</button>
       </div>
-      ${table(["Projet","Statut","Budget","Matériaux","Reste","Consommation"],projectRows.map(x=>`
-        <tr>
+      ${table(["Projet","Statut","Budget","Matériaux","Ouvrage","Reste","Consommation"],projectRows.map(x=>`
+        <tr class="clickable-row v56-performance-project-row ${Number(x.locked)===1?"v56-locked-project-row":""}" data-id="${x.id}" title="${Number(x.locked)===1?"Projet verrouillé":"Ouvrir le projet"}">
           <td><strong>${esc(x.name)}</strong><br><small>${esc(x.location||"")}</small></td>
-          <td><span class="status">${esc(x.status)}</span></td>
+          <td><span class="status">${esc(statusLabel(x.status))}</span></td>
           <td class="money">${cash(x.budget)}</td>
-          <td class="money">${cash(x.spent)}</td>
+          <td class="money">${cash(x.materials)}</td>
+          <td class="money">${cash(x.ouvrages)}</td>
           <td class="money ${x.remaining<0?"negative":""}">${cash(x.remaining)}</td>
           <td>
             <div class="table-progress"><span style="width:${Math.min(100,Math.max(0,x.pct))}%"></span></div>
@@ -479,6 +480,11 @@ function dashboard(){
 
     ${suspended?`<div class="panel alert-panel"><strong>Attention :</strong> ${suspended} projet(s) suspendu(s) nécessitent un suivi.</div>`:""}
   `;
+  document.querySelectorAll(".v56-performance-project-row").forEach(row=>row.onclick=()=>{
+    const project=p.find(x=>x.id===row.dataset.id);if(!project)return;
+    if(Number(project.locked)===1)return toast("Projet verrouillé. Déverrouillez-le depuis la section Projets avec le mot de passe Administrateur.",true);
+    v36ProjectPage(project.id);
+  });
 }
 function projects(){
   const rows=S.data.projects.map(x=>{const ts=(S.data.trades||[]).filter(t=>t.project_id===x.id);return `<tr class="clickable-row project-row" data-id="${x.id}"><td><strong>${esc(x.name)}</strong></td><td>${esc(x.location||'')}</td><td class="money">${cash(x.budget)}</td><td><span class="status">${esc(x.status)}</span></td><td>${ts.length} métier(s)</td><td><div class="actions"><button class="btn small secondary edit-project" data-id="${x.id}">Modifier</button><button class="btn small secondary print-project" data-id="${x.id}">PDF A4</button>${S.session.user.role==='admin'?`<button class="btn small danger del-project" data-id="${x.id}">Supprimer</button>`:''}</div></td></tr>`});
@@ -1180,9 +1186,9 @@ document.addEventListener("submit",e=>{
 // V41 — impressions corporate complémentaires.
 document.addEventListener("click",e=>{
   if(e.target?.id==="v41PrintDashboard"){
-    const projects=S.data.projects||[],expenses=S.data.expenses||[],labor=S.data.labor||[];
-    const rows=projects.map(p=>{const spent=expenses.filter(x=>x.project_id===p.id).reduce((a,x)=>a+Number(x.total_price||0),0)+labor.filter(x=>x.project_id===p.id).reduce((a,x)=>a+Number(x.amount||0),0);return {p,spent,remain:Number(p.budget||0)-spent}});
-    const body=`<table><tr><th>N° projet</th><th>Projet</th><th>Statut</th><th>Budget</th><th>Consommé</th><th>Reste</th></tr>${rows.map(x=>`<tr><td>${esc(x.p.project_number||"—")}</td><td>${esc(x.p.name)}</td><td>${esc(statusLabel(x.p.status))}</td><td class="money">${cash(x.p.budget)}</td><td class="money">${cash(x.spent)}</td><td class="money">${cash(x.remain)}</td></tr>`).join("")}</table>`;
+    const projects=S.data.projects||[],expenses=S.data.expenses||[],trades=S.data.trades||[];
+    const rows=projects.map(p=>{const materials=expenses.filter(x=>x.project_id===p.id).reduce((a,x)=>a+Number(x.total_price||0),0),ouvrages=trades.filter(t=>t.project_id===p.id).reduce((a,t)=>a+projectOuvrageLabor(p.id,t),0),spent=materials+ouvrages,budget=Number(p.budget||0),pct=budget>0?Math.round(spent*100/budget):0;return {p,materials,ouvrages,spent,remain:budget-spent,pct}});
+    const body=`<table><tr><th>Projet</th><th>Statut</th><th>Budget</th><th>Matériaux</th><th>Ouvrage</th><th>Reste</th><th>Consommation</th></tr>${rows.map(x=>`<tr><td>${esc(x.p.name)}</td><td>${esc(statusLabel(x.p.status))}</td><td class="money">${cash(x.p.budget)}</td><td class="money">${cash(x.materials)}</td><td class="money">${cash(x.ouvrages)}</td><td class="money">${cash(x.remain)}</td><td class="center">${x.pct}%</td></tr>`).join("")}</table>`;
     printA4("Performance des projets","Tableau de bord de gestion",body,"landscape",{info:[{label:"Nombre de projets",value:projects.length},{label:"Date d’édition",value:new Date().toLocaleDateString("fr-FR")},{label:"Édité par",value:S.session.user.full_name||"Administrateur"},{label:"Entreprise",value:S.session.company?.name||"GLOBAL BT"}],totalLabel:"Total projets",total:projects.length});
   }
 });

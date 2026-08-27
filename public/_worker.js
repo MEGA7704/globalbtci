@@ -999,10 +999,18 @@ async function saveCompany(req,env,s,entity,action,r){
       await env.DB.prepare("UPDATE projects SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?").bind(st,r.id,c).run();
       await audit(env,actor,"PROJECT_STATUS","project",r.id,ip(req),{status:st});return json({ok:true});
     }
-    if(action==="lock"||action==="unlock"){
+    if(action==="unlock"){
+      // V56 : un projet verrouillé ne peut être déverrouillé que par l'Administrateur
+      // connecté après vérification obligatoire de son mot de passe côté serveur.
       const denied=await adminPasswordGate(env,s,r.admin_password);if(denied)return denied;
-      await env.DB.prepare("UPDATE projects SET locked=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?").bind(action==="lock"?1:0,r.id,c).run();
-      await audit(env,actor,action==="lock"?"LOCK_PROJECT":"UNLOCK_PROJECT","project",r.id,ip(req));return json({ok:true});
+      if(Number(own.locked)!==1)return json({ok:true,already_unlocked:true});
+      await env.DB.prepare("UPDATE projects SET locked=0,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?").bind(r.id,c).run();
+      await audit(env,actor,"UNLOCK_PROJECT","project",r.id,ip(req));return json({ok:true});
+    }
+    if(action==="lock"){
+      const denied=await adminPasswordGate(env,s,r.admin_password);if(denied)return denied;
+      await env.DB.prepare("UPDATE projects SET locked=1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?").bind(r.id,c).run();
+      await audit(env,actor,"LOCK_PROJECT","project",r.id,ip(req));return json({ok:true});
     }
     if(action==="delete"){
       const denied=await adminPasswordGate(env,s,r.admin_password);if(denied)return denied;

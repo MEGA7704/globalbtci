@@ -1,0 +1,16 @@
+GLOBAL BT — V56
+
+1. Tableau de bord / Performance des projets
+- Colonnes : Projet, Statut, Budget, Matériaux, Ouvrage, Reste, Consommation.
+- Matériaux = total des matériaux fournis du projet.
+- Ouvrage = total de la main-d’œuvre convenue des ouvrages (avec compatibilité des anciennes données de main-d’œuvre).
+- Reste = Budget - Matériaux - Ouvrage.
+- Consommation = (Matériaux + Ouvrage) / Budget.
+- Ligne cliquable : ouvre directement l’espace du projet si celui-ci n’est pas verrouillé.
+- Projet verrouillé : aucun accès depuis la ligne Performance ; message invitant à le déverrouiller depuis Projets.
+- PDF Performance aligné sur les mêmes colonnes.
+
+2. Projets / verrouillage
+- Le déverrouillage exige obligatoirement le mot de passe de l’Administrateur connecté.
+- Contrôle effectué côté serveur ; un utilisateur non Administrateur ou un mot de passe absent/incorrect est refusé.
+- Le verrouillage reste lui aussi protégé par le mot de passe Administrateur.

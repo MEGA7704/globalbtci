@@ -1,8 +1,8 @@
 {
   "name": "global-bt-cloudflare",
-  "version": "55.0.0",
+  "version": "56.0.0",
   "private": true,
-  "description": "GLOBAL BT - V55 : historique des versements enrichi et spécialités épurées",
+  "description": "GLOBAL BT - V56 : performance projets cliquable et déverrouillage sécurisé",
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node --check public/_worker.js && node --check public/app.js",
