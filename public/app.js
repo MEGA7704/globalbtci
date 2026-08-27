@@ -642,6 +642,24 @@ function users(){$("#content").innerHTML=`<div class="panel"><div class="panelhe
 document.addEventListener("submit",async e=>{if(e.target.id==="agentForm"){e.preventDefault();try{await post("/api/save",{entity:"user",action:"create",record:fd(e.target)});closeModal();await reload();users();toast("Agent créé")}catch(x){toast(x.message,true)}}});
 async function postSaveUser(id,action){try{await post("/api/save",{entity:"user",action,record:{id}});await reload();users();toast("Compte mis à jour")}catch(x){toast(x.message,true)}}
 function reports(){const mat=S.data.expenses.reduce((a,x)=>a+Number(x.total_price),0),lab=S.data.labor.reduce((a,x)=>a+Number(x.amount),0);const by=S.data.trades.map(t=>({name:t.name,m:S.data.expenses.filter(x=>x.trade_id===t.id).reduce((a,x)=>a+Number(x.total_price),0),l:S.data.labor.filter(x=>x.trade_id===t.id).reduce((a,x)=>a+Number(x.amount),0)}));$("#content").innerHTML=`<div class="kpis">${kpi("Matériaux",cash(mat))}${kpi("Main-d'œuvre",cash(lab))}${kpi("Total",cash(mat+lab))}</div><div class="panel"><div class="panelhead"><h2>Bilan par métier</h2><button onclick="printA4('Bilan par métier','Rapport de gestion',this.closest('.panel').querySelector('.tablewrap')?.outerHTML||'', 'landscape')" class="btn secondary">PDF A4</button></div>${table(["Métier","Matériaux","Main-d'œuvre","Total"],by.map(x=>`<tr><td>${esc(x.name)}</td><td class="money">${cash(x.m)}</td><td class="money">${cash(x.l)}</td><td class="money"><strong>${cash(x.m+x.l)}</strong></td></tr>`))}</div>`}
+function enterHeader(){
+  if(!S.session)return;
+  const user=S.session.user||{},company=S.session.company||null;
+  const userBadge=$("#userBadge"),planBadge=$("#planBadge"),pageSub=$("#pageSub"),appBrand=$("#appBrand");
+  if(userBadge)userBadge.textContent=`${user.full_name||"Utilisateur"} · ${user.role||""}`;
+  if(planBadge)planBadge.textContent=company?`${String(company.plan||"free").toUpperCase()} · ${df(company.plan_expires_at)}`:"SUPER ADMIN";
+  if(pageSub)pageSub.textContent=company?.name||"Administration générale";
+  if(appBrand){
+    const mark=appBrand.querySelector(".brandmark");
+    const title=appBrand.querySelector("strong");
+    if(title)title.textContent=company?.name||"GLOBAL BT";
+    if(mark){
+      const logo=companyCustomLogo();
+      if(logo){mark.classList.add("has-logo");mark.innerHTML=`<img src="${esc(logo)}" alt="Logo entreprise">`;}
+      else{mark.classList.remove("has-logo");mark.textContent="GBT";}
+    }
+  }
+}
 function paidPlanActive(){const c=S.session?.company;return !!c&&["standard","business"].includes(String(c.plan||"").toLowerCase())&&Date.parse(c.plan_expires_at)>Date.now()}
 function pendingSubscriptionRequest(){return (S.data?.subscriptionRequests||[]).find(x=>x.status==="pending")||null}
 function pendingClosureRequest(){return (S.data?.closureRequests||[]).find(x=>x.status==="pending")||null}

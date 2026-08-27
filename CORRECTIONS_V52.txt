@@ -1,0 +1,9 @@
+GLOBAL BT — V52 — CORRECTION AFFICHAGE ESPACE DE TRAVAIL
+
+Correction ciblée de la régression V51 :
+- restauration de la fonction commune enterHeader() supprimée accidentellement ;
+- rétablissement du chargement du menu horizontal, du tableau de bord et de tous les contenus après connexion ;
+- conservation de la personnalisation du logo Standard / Business ;
+- affichage du logo personnalisé dans l’en-tête lorsque le plan payant est actif ;
+- retour automatique au logo GBT pour Free / Super Admin ;
+- aucune modification des données métier, projets, paiements ou migrations existantes.
