@@ -1,8 +1,8 @@
 {
   "name": "global-bt-cloudflare",
-  "version": "57.0.0",
+  "version": "58.0.0",
   "private": true,
-  "description": "GLOBAL BT - V57 : accès strict aux projets verrouillés",
+  "description": "GLOBAL BT - V58 : liste des projets sans défilement horizontal et menu Rapports retiré",
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node --check public/_worker.js && node --check public/app.js",

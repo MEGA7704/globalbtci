@@ -884,3 +884,32 @@ table td.center,.center{ text-align:center!important }
 .v57-project-locked{cursor:not-allowed!important;opacity:.78}
 .v57-project-locked td:not(.v41-project-actions-cell){background:rgba(120,120,120,.045)}
 .v57-project-locked .project-number-cell strong::after{content:"  🔒";font-size:.85em}
+
+
+/* ===== V58 — LISTE DES PROJETS SANS DÉFILEMENT HORIZONTAL ===== */
+.v41-project-table .tablewrap{
+  width:100%;max-width:100%;overflow-x:hidden!important;overflow-y:visible!important;border:1px solid var(--line)
+}
+.v41-project-table table{
+  width:100%!important;min-width:0!important;max-width:100%!important;table-layout:fixed!important;border-collapse:collapse
+}
+.v41-project-table th,.v41-project-table td{
+  padding:8px 5px!important;border-right:1px solid #dfe8e6;border-bottom:1px solid #dfe8e6;vertical-align:middle!important;
+  white-space:normal!important;overflow-wrap:anywhere;word-break:normal;line-height:1.25;font-size:clamp(.66rem,.72vw,.79rem)!important
+}
+.v41-project-table th:last-child,.v41-project-table td:last-child{border-right:0}
+.v41-project-table th{text-align:center!important;font-weight:850}
+.v41-project-table td{text-align:justify!important;text-justify:inter-word}
+.v41-project-table th:nth-child(1){width:8%!important}.v41-project-table th:nth-child(2){width:13%!important}
+.v41-project-table th:nth-child(3){width:9%!important}.v41-project-table th:nth-child(4){width:9%!important}
+.v41-project-table th:nth-child(5){width:12%!important}.v41-project-table th:nth-child(6){width:11%!important}
+.v41-project-table th:nth-child(7){width:12%!important}.v41-project-table th:nth-child(8){width:10%!important}
+.v41-project-table th:nth-child(9){width:16%!important}
+.v41-project-table .project-number-cell,.v41-project-table .project-dates,.v41-project-table td.center,.v41-project-table .v41-project-actions-cell{text-align:center!important}
+.v41-project-table .project-dates{display:table-cell!important;white-space:normal!important}
+.v41-project-table .project-dates span,.v41-project-table .project-dates small{display:block;margin:1px 0;font-size:.69rem}
+.v41-project-table .project-actions{display:flex!important;flex-direction:column;align-items:stretch;justify-content:center!important;gap:4px!important;width:100%}
+.v41-project-table .project-actions .btn{width:100%;min-width:0;padding:5px 4px!important;font-size:.66rem!important;line-height:1.15;white-space:normal}
+.v58-status-button{max-width:100%;border:1px solid #cadbd7;cursor:pointer;font:inherit;color:#174e47;white-space:normal;line-height:1.15}
+.v58-status-button:hover{background:#dcebe7}
+@media(max-width:1100px){.v41-projects-panel{padding:12px}.v41-project-table th,.v41-project-table td{padding:6px 3px!important;font-size:.62rem!important}.v41-project-table .project-actions .btn{font-size:.6rem!important;padding:4px 2px!important}.v41-project-table .project-dates span,.v41-project-table .project-dates small{font-size:.61rem}}

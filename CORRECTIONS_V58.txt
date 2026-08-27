@@ -1,0 +1,13 @@
+GLOBAL BT — CORRECTIONS V58
+
+PROJETS / LISTE DES PROJETS
+- Colonnes : N° projet, Nom du projet, Type, Localité, Maître d'ouvrage, Responsable, Date début / Date fin, Statut, Actions.
+- Statut : bouton popup pour l'Administrateur.
+- Actions : Modifier, Verrouiller/Déverrouiller, Supprimer uniquement.
+- Le PDF individuel est retiré de chaque ligne ; l'impression générale PDF A4 reste disponible en haut.
+- Tableau ajusté à la largeur de la page sans défilement horizontal.
+- Lignes et colonnes quadrillées, textes justifiés et colonnes techniques centrées.
+- Verrouillage strict V57 conservé.
+
+MENU PRINCIPAL
+- Section Rapports supprimée du menu horizontal.
