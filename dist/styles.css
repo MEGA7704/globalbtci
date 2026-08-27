@@ -873,3 +873,14 @@ table td.center,.center{ text-align:center!important }
 .logo-system-preview{width:60px;height:60px;min-width:60px;border-radius:14px;font-size:.9rem}
 .logo-free-lock{display:flex;align-items:center;gap:15px;padding:14px 16px;border:1px solid #d9e2df;border-radius:14px;background:#f5f8f7}.logo-free-lock strong{display:block;color:#164f47}.logo-free-lock p{margin:5px 0 0;color:var(--muted);line-height:1.5}
 @media(max-width:640px){.company-logo-editor{grid-template-columns:1fr}.company-logo-preview{height:100px}.logo-free-lock{align-items:flex-start}}
+
+/* V56 — Performance projets : lignes ouvrables uniquement si le projet n'est pas verrouillé. */
+.v56-performance-project-row td{transition:background .15s ease}
+.v56-performance-project-row:not(.v56-locked-project-row):hover td{background:#f0f8f6}
+.v56-locked-project-row{cursor:not-allowed;opacity:.78}
+.v56-locked-project-row:hover td{background:#fff8ed}
+
+/* V57 — projet verrouillé : aucune ouverture avant déverrouillage administrateur */
+.v57-project-locked{cursor:not-allowed!important;opacity:.78}
+.v57-project-locked td:not(.v41-project-actions-cell){background:rgba(120,120,120,.045)}
+.v57-project-locked .project-number-cell strong::after{content:"  🔒";font-size:.85em}

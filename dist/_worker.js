@@ -583,11 +583,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"52.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"57.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"52.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"57.0.0"},500);
   }
 }
 async function login(req,env){
@@ -999,10 +999,18 @@ async function saveCompany(req,env,s,entity,action,r){
       await env.DB.prepare("UPDATE projects SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?").bind(st,r.id,c).run();
       await audit(env,actor,"PROJECT_STATUS","project",r.id,ip(req),{status:st});return json({ok:true});
     }
-    if(action==="lock"||action==="unlock"){
+    if(action==="unlock"){
+      // V56 : un projet verrouillé ne peut être déverrouillé que par l'Administrateur
+      // connecté après vérification obligatoire de son mot de passe côté serveur.
       const denied=await adminPasswordGate(env,s,r.admin_password);if(denied)return denied;
-      await env.DB.prepare("UPDATE projects SET locked=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?").bind(action==="lock"?1:0,r.id,c).run();
-      await audit(env,actor,action==="lock"?"LOCK_PROJECT":"UNLOCK_PROJECT","project",r.id,ip(req));return json({ok:true});
+      if(Number(own.locked)!==1)return json({ok:true,already_unlocked:true});
+      await env.DB.prepare("UPDATE projects SET locked=0,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?").bind(r.id,c).run();
+      await audit(env,actor,"UNLOCK_PROJECT","project",r.id,ip(req));return json({ok:true});
+    }
+    if(action==="lock"){
+      const denied=await adminPasswordGate(env,s,r.admin_password);if(denied)return denied;
+      await env.DB.prepare("UPDATE projects SET locked=1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=?").bind(r.id,c).run();
+      await audit(env,actor,"LOCK_PROJECT","project",r.id,ip(req));return json({ok:true});
     }
     if(action==="delete"){
       const denied=await adminPasswordGate(env,s,r.admin_password);if(denied)return denied;
@@ -1252,7 +1260,7 @@ async function cryptoHealth(req,env){
     const test=await makeMemberCredential("GlobalBT-Test-2026!");
     return json({
       ok:true,
-      app_version:"52.0.0",
+      app_version:"57.0.0",
       algorithm:"PBKDF2-SHA-256",
       iterations:test.password_iterations,
       elapsed_ms:Date.now()-started
@@ -1260,7 +1268,7 @@ async function cryptoHealth(req,env){
   }catch(e){
     return json({
       ok:false,
-      app_version:"52.0.0",
+      app_version:"57.0.0",
       code:e?.message||"PASSWORD_HASH_FAILED",
       elapsed_ms:Date.now()-started
     },500);
@@ -1294,7 +1302,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"52.0.0",
+    app_version:"57.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,

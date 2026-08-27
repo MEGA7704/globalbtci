@@ -1,0 +1,12 @@
+GLOBAL BT — V57
+
+CORRECTION CIBLÉE : PROJETS VERROUILLÉS
+
+- Un projet verrouillé ne peut plus être ouvert depuis Projets / Liste des projets.
+- Le contrôle est placé dans la fonction centrale d’ouverture de l’espace projet : aucun autre chemin d’accès ne peut contourner le verrouillage.
+- Le clic sur une ligne verrouillée affiche un message et ne change pas de page.
+- Le déverrouillage reste réservé à l’Administrateur et exige son mot de passe, vérifié côté serveur.
+- Une fois le déverrouillage réussi, le projet redevient accessible normalement.
+- Les lignes verrouillées sont visuellement identifiées par un cadenas.
+
+Aucune migration D1 supplémentaire.

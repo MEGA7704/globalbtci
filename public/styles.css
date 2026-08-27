@@ -879,3 +879,8 @@ table td.center,.center{ text-align:center!important }
 .v56-performance-project-row:not(.v56-locked-project-row):hover td{background:#f0f8f6}
 .v56-locked-project-row{cursor:not-allowed;opacity:.78}
 .v56-locked-project-row:hover td{background:#fff8ed}
+
+/* V57 — projet verrouillé : aucune ouverture avant déverrouillage administrateur */
+.v57-project-locked{cursor:not-allowed!important;opacity:.78}
+.v57-project-locked td:not(.v41-project-actions-cell){background:rgba(120,120,120,.045)}
+.v57-project-locked .project-number-cell strong::after{content:"  🔒";font-size:.85em}

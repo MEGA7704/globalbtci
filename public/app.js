@@ -915,6 +915,15 @@ function v36ProjectPage(projectId,initialView="suppliers"){
   if(initialView==="expenses")initialView="materials";
   if(!["suppliers","works","materials","finance"].includes(initialView))initialView="suppliers";
   const p=S.data.projects.find(x=>x.id===projectId);if(!p)return projects();
+  // V57 : verrouillage central de l'accès à l'espace projet.
+  // Aucun chemin (liste, tableau de bord, restauration de vue ou appel interne)
+  // ne peut ouvrir un projet tant qu'il n'a pas été déverrouillé par l'Administrateur.
+  if(Number(p.locked)===1){
+    S.currentProjectId=null;S.currentProjectView=null;
+    projects();
+    toast("Projet verrouillé : accès impossible. Utilisez « Déverrouiller » puis saisissez le mot de passe Administrateur.",true);
+    return;
+  }
   S.currentProjectId=projectId;S.currentProjectView=initialView;
   const trades=(S.data.trades||[]).filter(x=>x.project_id===projectId);
   const expenses=(S.data.expenses||[]).filter(x=>x.project_id===projectId);
@@ -1054,7 +1063,7 @@ function projects(){
     const q=query.trim().toLowerCase();if(!q)return true;
     return [x.project_number,x.name,x.status,statusLabel(x.status)].some(v=>String(v||"").toLowerCase().includes(q));
   };
-  const rowHtml=x=>`<tr class="clickable-row v28-project-row" data-id="${x.id}">
+  const rowHtml=x=>`<tr class="clickable-row v28-project-row ${Number(x.locked)===1?"v57-project-locked":""}" data-id="${x.id}" title="${Number(x.locked)===1?"Projet verrouillé — déverrouillage obligatoire":"Ouvrir le projet"}">
     <td class="project-number-cell"><strong>${esc(x.project_number||"—")}</strong></td>
     <td><strong>${esc(x.name)}</strong></td>
     <td>${esc(x.project_type||"—")}</td>
@@ -1073,7 +1082,7 @@ function projects(){
   </div>`;
   const tbody=$(".v41-project-table tbody"),counter=$("#v41ProjectSearchCount");
   const bindRows=()=>{
-    document.querySelectorAll('.v28-project-row').forEach(r=>r.onclick=e=>{if(e.target.closest('button'))return;v36ProjectPage(r.dataset.id)});
+    document.querySelectorAll('.v28-project-row').forEach(r=>r.onclick=e=>{if(e.target.closest('button'))return;const x=S.data.projects.find(p=>p.id===r.dataset.id);if(!x)return;if(Number(x.locked)===1)return toast("Projet verrouillé : accès impossible. Cliquez sur « Déverrouiller » et saisissez le mot de passe Administrateur.",true);v36ProjectPage(r.dataset.id)});
     document.querySelectorAll('.v41PrintProject').forEach(b=>b.onclick=e=>{e.stopPropagation();const x=S.data.projects.find(p=>p.id===b.dataset.id);if(!x)return;const projectTrades=(S.data.trades||[]).filter(t=>t.project_id===x.id),projectSuppliers=(S.data.projectSuppliers||[]).filter(sp=>sp.project_id===x.id);const body=`<table><tr><th>N° projet</th><th>Nom du projet</th><th>Type</th><th>Localité</th></tr><tr><td><strong>${esc(x.project_number||"—")}</strong></td><td>${esc(x.name)}</td><td>${esc(x.project_type||"—")}</td><td>${esc(x.location||"—")}</td></tr></table><h3>Informations du projet</h3><table><tr><th>Maître d'ouvrage</th><th>Responsable</th><th>Date début</th><th>Date fin</th><th>Statut</th></tr><tr><td>${esc(x.owner_name||"—")}</td><td>${esc(x.manager_name||"—")}</td><td>${df(x.start_date)||"—"}</td><td>${df(x.end_date)||"—"}</td><td class="center">${printStatus(x.status)}</td></tr></table>`;printA4("Fiche projet",x.name,body,"landscape",{info:[{label:"Projet",value:x.name},{label:"Code projet",value:x.project_number||"—"},{label:"Date d’édition",value:new Date().toLocaleDateString("fr-FR")},{label:"Édité par",value:S.session.user.full_name||"Administrateur"}],totalLabel:"Métiers / Fournisseurs",total:`${projectTrades.length} / ${projectSuppliers.length}`})});
     document.querySelectorAll('.v28Edit').forEach(b=>b.onclick=e=>{e.stopPropagation();const x=S.data.projects.find(p=>p.id===b.dataset.id);if(S.session.user.role!=='admin')return toast('Modification réservée à l’Administrateur',true);modal(`<h2>Modifier le projet</h2><form id="v28ProjectEdit" data-id="${x.id}" class="formgrid"><label>N° projet<input value="${esc(x.project_number||"")}" disabled></label><label>Nom<input name="name" value="${esc(x.name)}" required></label><label>Type<input name="project_type" value="${esc(x.project_type||'')}"></label><label>Localité<input name="location" value="${esc(x.location||'')}"></label><label>Budget<input name="budget" type="number" value="${Number(x.budget||0)}"></label><label>Maître d'ouvrage<input name="owner_name" value="${esc(x.owner_name||'')}"></label><label>Responsable<input name="manager_name" value="${esc(x.manager_name||'')}"></label><label>Date début<input name="start_date" type="date" value="${esc(x.start_date||'')}"></label><label>Date fin<input name="end_date" type="date" value="${esc(x.end_date||'')}"></label><label class="span2">Description<textarea name="description">${esc(x.description||'')}</textarea></label><label class="span2">Mot de passe Administrateur<input name="admin_password" type="password" required></label><button class="btn primary span2">Enregistrer</button></form>`)});
     document.querySelectorAll('.v28Lock').forEach(b=>b.onclick=e=>{e.stopPropagation();adminGate(b.dataset.act==='lock'?'Verrouiller le projet':'Déverrouiller le projet',async pw=>{await post('/api/save',{entity:'project',action:b.dataset.act,record:{id:b.dataset.id,admin_password:pw}});closeModal();await reload();projects();toast('Projet mis à jour')})});
