@@ -1,8 +1,8 @@
 {
   "name": "global-bt-cloudflare",
-  "version": "54.0.0",
+  "version": "55.0.0",
   "private": true,
-  "description": "GLOBAL BT - V54 : listes métiers et spécialités dynamiques dans les ouvrages",
+  "description": "GLOBAL BT - V55 : historique des versements enrichi et spécialités épurées",
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node --check public/_worker.js && node --check public/app.js",

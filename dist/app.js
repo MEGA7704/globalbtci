@@ -666,7 +666,7 @@ function initProjectTradeCatalogForm(root=document,trade=null){
     }
     resolvedGroup.value=g.label;
     specialty.disabled=false;specialty.setAttribute("required","");
-    specialty.innerHTML=`<option value="">Sélectionner un domaine / spécialité</option>${g.activities.map(([name,text])=>`<option value="${esc(name)}">${esc(name==="Autre"?"Autre (ajouter champ à remplir)":`${name} — ${text}`)}</option>`).join("")}`;
+    specialty.innerHTML=`<option value="">Sélectionner un domaine / spécialité</option>${g.activities.map(([name])=>`<option value="${esc(name)}">${esc(name==="Autre"?"Autre (ajouter champ à remplir)":name)}</option>`).join("")}`;
     const match=g.activities.find(([name])=>name===existingSpecialty);
     if(initializing&&match)specialty.value=match[0];
     else if(initializing&&existingSpecialty){specialty.value="Autre";customSpecialty.value=existingSpecialty}
@@ -709,24 +709,26 @@ function projectPaymentOptions(projectId,type){
   if(type==="supplier")return (S.data.projectSuppliers||[]).filter(x=>x.project_id===projectId).map(x=>({id:x.supplier_id,name:x.supplier_name||"Fournisseur"}));
   return (S.data.trades||[]).filter(x=>x.project_id===projectId).map(x=>({id:x.id,name:`${x.provider_name||x.name||"Ouvrage"} — ${x.phase||""} / ${x.name||""}`}));
 }
-function openProjectPaymentModal(projectId){
+function openProjectPaymentModal(projectId,payment=null){
   const p=S.data.projects.find(x=>x.id===projectId);if(!p)return;
-  modal(`<h2>Faire un paiement · ${esc(p.name)}</h2><form id="v47PaymentForm" data-project="${esc(projectId)}" class="formgrid">
-    <label>Section visée<select id="v47PaymentType" name="target_type" required><option value="supplier">Fournisseur de matériaux</option><option value="ouvrage">Ouvrage</option></select></label>
+  const editing=!!payment;
+  modal(`<h2>${editing?"Modifier le versement":"Faire un paiement"} · ${esc(p.name)}</h2><form id="${editing?"v55PaymentEditForm":"v47PaymentForm"}" data-project="${esc(projectId)}" ${editing?`data-id="${esc(payment.id)}"`:""} class="formgrid">
+    <label>Section visée<select id="v47PaymentType" name="target_type" required><option value="supplier" ${payment?.target_type==="supplier"?"selected":""}>Fournisseur de matériaux</option><option value="ouvrage" ${payment?.target_type==="ouvrage"?"selected":""}>Ouvrage</option></select></label>
     <label>Bénéficiaire<select id="v47PaymentTarget" name="target_id" required></select></label>
-    <label>Montant versé (FCFA)<input name="amount" type="number" min="1" required></label>
-    <label>Date du paiement<input name="payment_date" type="date" value="${new Date().toISOString().slice(0,10)}" required></label>
-    <label>Mode de paiement<input name="payment_method" placeholder="Espèces, virement, Mobile Money..."></label>
-    <label>Référence<input name="reference" placeholder="N° reçu / transaction"></label>
-    <label class="span2">Notes<textarea name="notes" rows="3"></textarea></label>
+    <label>Montant versé (FCFA)<input name="amount" type="number" min="1" value="${editing?Number(payment.amount||0):""}" required></label>
+    <label>Date du paiement<input name="payment_date" type="date" value="${esc(payment?.payment_date||new Date().toISOString().slice(0,10))}" required></label>
+    <label>Mode de paiement<input name="payment_method" value="${esc(payment?.payment_method||"")}" placeholder="Espèces, virement, Mobile Money..."></label>
+    <label>Référence<input name="reference" value="${esc(payment?.reference||"")}" placeholder="N° reçu / transaction"></label>
+    <label class="span2">Notes<textarea name="notes" rows="3">${esc(payment?.notes||"")}</textarea></label>
     <div id="v47PaymentHint" class="notice span2"></div>
-    <button class="btn primary span2" type="submit">Enregistrer le paiement</button>
+    <button class="btn primary span2" type="submit">${editing?"Enregistrer les modifications":"Enregistrer le paiement"}</button>
   </form>`);
   const type=$("#v47PaymentType"),target=$("#v47PaymentTarget"),hint=$("#v47PaymentHint");
   const refresh=()=>{
     const options=projectPaymentOptions(projectId,type.value);
-    target.innerHTML=`<option value="">— Sélectionner —</option>`+options.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");
+    target.innerHTML=`<option value="">— Sélectionner —</option>`+options.map(x=>`<option value="${esc(x.id)}" ${editing&&String(x.id)===String(payment.target_id)?"selected":""}>${esc(x.name)}</option>`).join("");
     hint.textContent=options.length?"Sélectionnez le bénéficiaire. Le système contrôlera automatiquement le reste à payer.":"Aucun bénéficiaire disponible dans cette section.";
+    if(target.value)target.dispatchEvent(new Event("change"));
   };
   type.onchange=refresh;
   target.onchange=()=>{
@@ -738,10 +740,12 @@ function openProjectPaymentModal(projectId){
     }else{
       const t=(S.data.trades||[]).find(x=>x.id===id);due=projectOuvrageLabor(projectId,t);paid=projectTargetPayments(projectId,"ouvrage",id);
     }
-    hint.innerHTML=`Valeur due : <strong>${cash(due)}</strong> · Déjà versé : <strong>${cash(paid)}</strong> · Reste : <strong>${cash(Math.max(0,due-paid))}</strong>`;
+    if(editing&&payment.target_type===type.value&&String(payment.target_id)===String(id))paid=Math.max(0,paid-Number(payment.amount||0));
+    hint.innerHTML=`Valeur due : <strong>${cash(due)}</strong> · Déjà versé hors ce versement : <strong>${cash(paid)}</strong> · Disponible : <strong>${cash(Math.max(0,due-paid))}</strong>`;
   };
   refresh();
 }
+
 function trades(){
   const catalog=S.data.tradeCatalog||[];
   const rows=catalog.map(x=>`<tr><td><span class="phase-badge">${esc(x.phase||"")}</span></td><td><strong>${esc(x.name)}</strong></td><td class="v38-actions-cell"><div class="actions v38-actions"><button class="btn small secondary v38EditCatalogTrade" data-id="${x.id}">Modifier</button>${S.session.user.role==="admin"?`<button class="btn small danger v38DeleteCatalogTrade" data-id="${x.id}">Supprimer</button>`:""}</div></td></tr>`);
@@ -976,10 +980,14 @@ function v36ProjectPage(projectId,initialView="suppliers"){
     const total=`<tr><td><strong>TOTAL</strong></td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td class="money"><strong>${cash(sum)}</strong></td></tr>`;
     printA4("Liste générale des matériaux fournis",p.location||p.name,`<table><tr><th>Date</th><th>Désignation</th><th>Fournisseur de matériaux</th><th>Destination / ouvrage</th><th>Quantité</th><th>Prix unité</th><th>Prix total</th></tr>${rows}${total}</table>`,"landscape",{info:projectPrintInfo(p),totalLabel:"Lignes matériaux",total:expenses.length});
   };
+  const paymentSpecialty=x=>{
+    if(x.target_type==="supplier"){const sp=suppliers.find(v=>String(v.supplier_id)===String(x.target_id));return sp?.specialty||"—"}
+    const t=trades.find(v=>String(v.id)===String(x.target_id));return t?.name||"—";
+  };
   const printFinanceState=()=>{
     const supplierDebt=suppliers.reduce((a,x)=>a+Math.max(0,supplierPurchased(x.supplier_id)-supplierPaid(x.supplier_id)),0),workDebt=trades.reduce((a,t)=>a+Math.max(0,projectOuvrageLabor(projectId,t)-workPaid(t.id)),0);
-    const history=payments.map(x=>`<tr><td>${df(x.payment_date)}</td><td>${x.target_type==="supplier"?"Fournisseur de matériaux":"Ouvrage"}</td><td>${esc(x.target_label||"—")}</td><td>${esc(x.payment_method||"—")}</td><td>${esc(x.reference||"—")}</td><td class="money">${cash(x.amount)}</td></tr>`).join("")||`<tr><td>—</td><td>—</td><td>Aucun versement</td><td>—</td><td>—</td><td class="money">${cash(0)}</td></tr>`;
-    const body=`<h3>Résumé financier</h3><table><tr><th>Total des dépenses</th><th>Total des versements</th><th>Total reste à payer</th><th>Dette fournisseurs</th><th>Dette ouvrages</th></tr><tr><td class="money">${cash(totalExpense)}</td><td class="money">${cash(paymentTotal)}</td><td class="money">${cash(totalRemaining)}</td><td class="money">${cash(supplierDebt)}</td><td class="money">${cash(workDebt)}</td></tr></table><h3>Historique des versements</h3><table><tr><th>Date</th><th>Section</th><th>Bénéficiaire</th><th>Mode</th><th>Référence</th><th>Versement</th></tr>${history}<tr><td><strong>TOTAL</strong></td><td>—</td><td>—</td><td>—</td><td>—</td><td class="money"><strong>${cash(paymentTotal)}</strong></td></tr></table>`;
+    const history=payments.map(x=>`<tr><td>${df(x.payment_date)}</td><td>${x.target_type==="supplier"?"Fournisseur de matériaux":"Ouvrage"}</td><td>${esc(x.target_label||"—")}</td><td>${esc(paymentSpecialty(x))}</td><td>${esc(x.payment_method||"—")}</td><td>${esc(x.reference||"—")}</td><td class="money">${cash(x.amount)}</td></tr>`).join("")||`<tr><td>—</td><td>—</td><td>Aucun versement</td><td>—</td><td>—</td><td>—</td><td class="money">${cash(0)}</td></tr>`;
+    const body=`<h3>Résumé financier</h3><table><tr><th>Total des dépenses</th><th>Total des versements</th><th>Total reste à payer</th><th>Dette fournisseurs</th><th>Dette ouvrages</th></tr><tr><td class="money">${cash(totalExpense)}</td><td class="money">${cash(paymentTotal)}</td><td class="money">${cash(totalRemaining)}</td><td class="money">${cash(supplierDebt)}</td><td class="money">${cash(workDebt)}</td></tr></table><h3>Historique des versements</h3><table><tr><th>Date</th><th>Section</th><th>Bénéficiaire</th><th>Domaine / spécialité</th><th>Mode</th><th>Référence</th><th>Versement</th></tr>${history}<tr><td><strong>TOTAL</strong></td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td class="money"><strong>${cash(paymentTotal)}</strong></td></tr></table>`;
     printA4("État financier du projet",p.location||p.name,body,"landscape",{info:projectPrintInfo(p),totalLabel:"Reste à payer",total:cash(totalRemaining)});
   };
 
@@ -1022,11 +1030,13 @@ function v36ProjectPage(projectId,initialView="suppliers"){
     }
     if(view==="finance"){
       const supplierDebt=suppliers.reduce((a,x)=>a+Math.max(0,supplierPurchased(x.supplier_id)-supplierPaid(x.supplier_id)),0),workDebt=trades.reduce((a,t)=>a+Math.max(0,projectOuvrageLabor(projectId,t)-workPaid(t.id)),0);
-      const history=payments.map(x=>`<tr><td>${df(x.payment_date)}</td><td>${x.target_type==="supplier"?"Fournisseur de matériaux":"Ouvrage"}</td><td><strong>${esc(x.target_label||"—")}</strong></td><td>${esc(x.payment_method||"—")}</td><td>${esc(x.reference||"—")}</td><td class="money">${cash(x.amount)}</td></tr>`);
-      history.push(`<tr class="project-total-row"><td colspan="5"><strong>TOTAL DES VERSEMENTS</strong></td><td class="money"><strong>${cash(paymentTotal)}</strong></td></tr>`);
-      content.innerHTML=`<div class="project-page-section-head"><div><h2>État financier</h2><p>Résumé automatique de toutes les dépenses et de tous les versements du projet.</p></div><div class="project-page-section-actions"><button id="v49PrintFinance" class="btn secondary">Imprimer l’état financier PDF A4</button><button id="projectMakePayment" class="btn primary">Faire un paiement</button></div></div><div class="finance-summary-grid"><div class="finance-summary-card"><small>Total des dépenses</small><strong>${cash(totalExpense)}</strong><span>Matériaux ${cash(materialTotal)} + main-d'œuvre ${cash(laborTotal)}</span></div><div class="finance-summary-card"><small>Total des versements</small><strong>${cash(paymentTotal)}</strong><span>Paiements enregistrés</span></div><div class="finance-summary-card emphasis"><small>Total reste à payer</small><strong>${cash(totalRemaining)}</strong><span>Fournisseurs ${cash(supplierDebt)} + ouvrages ${cash(workDebt)}</span></div></div><div class="project-page-card"><div class="finance-history-title"><h3>Historique des versements</h3></div>${table(["Date","Section","Bénéficiaire","Mode","Référence","Versement"],history)}</div>`;
+      const history=payments.map(x=>`<tr><td>${df(x.payment_date)}</td><td>${x.target_type==="supplier"?"Fournisseur de matériaux":"Ouvrage"}</td><td><strong>${esc(x.target_label||"—")}</strong></td><td>${esc(paymentSpecialty(x))}</td><td>${esc(x.payment_method||"—")}</td><td>${esc(x.reference||"—")}</td><td class="money">${cash(x.amount)}</td><td class="v38-actions-cell"><div class="actions v38-actions"><button class="btn small secondary v55-edit-payment" data-id="${x.id}">Modifier</button><button class="btn small danger v55-delete-payment" data-id="${x.id}">Supprimer</button></div></td></tr>`);
+      history.push(`<tr class="project-total-row"><td colspan="6"><strong>TOTAL DES VERSEMENTS</strong></td><td class="money"><strong>${cash(paymentTotal)}</strong></td><td></td></tr>`);
+      content.innerHTML=`<div class="project-page-section-head"><div><h2>État financier</h2><p>Résumé automatique de toutes les dépenses et de tous les versements du projet.</p></div><div class="project-page-section-actions"><button id="v49PrintFinance" class="btn secondary">Imprimer l’état financier PDF A4</button><button id="projectMakePayment" class="btn primary">Faire un paiement</button></div></div><div class="finance-summary-grid"><div class="finance-summary-card"><small>Total des dépenses</small><strong>${cash(totalExpense)}</strong><span>Matériaux ${cash(materialTotal)} + main-d'œuvre ${cash(laborTotal)}</span></div><div class="finance-summary-card"><small>Total des versements</small><strong>${cash(paymentTotal)}</strong><span>Paiements enregistrés</span></div><div class="finance-summary-card emphasis"><small>Total reste à payer</small><strong>${cash(totalRemaining)}</strong><span>Fournisseurs ${cash(supplierDebt)} + ouvrages ${cash(workDebt)}</span></div></div><div class="project-page-card"><div class="finance-history-title"><h3>Historique des versements</h3></div>${table(["Date","Section","Bénéficiaire","Domaine / spécialité","Mode","Référence","Versement","Actions"],history)}</div>`;
       $("#projectMakePayment").onclick=()=>openProjectPaymentModal(projectId);
       $("#v49PrintFinance").onclick=printFinanceState;
+      document.querySelectorAll(".v55-edit-payment").forEach(b=>b.onclick=()=>{const x=payments.find(v=>v.id===b.dataset.id);if(x)openProjectPaymentModal(projectId,x)});
+      document.querySelectorAll(".v55-delete-payment").forEach(b=>b.onclick=()=>confirmBox("Supprimer définitivement ce versement ?",async()=>{await post("/api/save",{entity:"project_payment",action:"delete",record:{id:b.dataset.id,project_id:projectId}});await reload();v36ProjectPage(projectId,"finance");toast("Versement supprimé")}));
     }
   };
   tabs.forEach(b=>b.onclick=()=>show(b.dataset.view));show(initialView);
@@ -1147,12 +1157,14 @@ document.addEventListener("submit",async e=>{
 
 
 document.addEventListener("submit",async e=>{
-  const f=e.target;if(!["v47SupplierEditForm","v47PaymentForm"].includes(f.id))return;e.preventDefault();
+  const f=e.target;if(!["v47SupplierEditForm","v47PaymentForm","v55PaymentEditForm"].includes(f.id))return;e.preventDefault();
   try{
     if(f.id==="v47SupplierEditForm"){
       await post("/api/save",{entity:"supplier",action:"update",record:{id:f.dataset.id,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"suppliers");toast("Fournisseur modifié");
     }else if(f.id==="v47PaymentForm"){
       await post("/api/save",{entity:"project_payment",action:"create",record:{project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"finance");toast("Paiement enregistré");
+    }else if(f.id==="v55PaymentEditForm"){
+      await post("/api/save",{entity:"project_payment",action:"update",record:{id:f.dataset.id,project_id:f.dataset.project,...fd(f)}});closeModal();await reload();v36ProjectPage(f.dataset.project,"finance");toast("Versement modifié");
     }
   }catch(x){toast(x.message,true)}finally{releaseForm(f)}
 });

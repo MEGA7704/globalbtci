@@ -1130,25 +1130,45 @@ async function saveCompany(req,env,s,entity,action,r){
   }
 
   if(entity==="project_payment"){
-    if(action==="create"){
-      const projectId=text(r.project_id,100),targetType=text(r.target_type,20),targetId=text(r.target_id,100),amount=money(r.amount);
-      if(!projectId||!["supplier","ouvrage"].includes(targetType)||!targetId||amount<=0)return json({error:"Bénéficiaire et montant du paiement obligatoires"},400);
-      const wp=await writableProject(env,c,projectId);if(wp.error)return wp.error;
+    const resolvePaymentTarget=async(projectId,targetType,targetId)=>{
       let totalDue=0,label="";
       if(targetType==="supplier"){
         const target=await env.DB.prepare(`SELECT sp.id,sp.name FROM suppliers sp JOIN project_suppliers ps ON ps.supplier_id=sp.id AND ps.company_id=sp.company_id WHERE sp.company_id=? AND ps.project_id=? AND sp.id=?`).bind(c,projectId,targetId).first();
-        if(!target)return json({error:"Fournisseur non affecté à ce projet"},400);
+        if(!target)return {error:json({error:"Fournisseur non affecté à ce projet"},400)};
         const due=await env.DB.prepare("SELECT COALESCE(SUM(total_price),0) total FROM expenses WHERE company_id=? AND project_id=? AND supplier_id=?").bind(c,projectId,targetId).first();totalDue=Number(due?.total||0);label=target.name||"Fournisseur";
       }else{
         const target=await env.DB.prepare("SELECT id,name,phase,provider_name,labor_amount FROM trades WHERE company_id=? AND project_id=? AND id=?").bind(c,projectId,targetId).first();
-        if(!target)return json({error:"Ouvrage introuvable dans ce projet"},400);
+        if(!target)return {error:json({error:"Ouvrage introuvable dans ce projet"},400)};
         const legacy=await env.DB.prepare("SELECT COALESCE(SUM(amount),0) total FROM labor_expenses WHERE company_id=? AND project_id=? AND trade_id=?").bind(c,projectId,targetId).first();totalDue=Number(target.labor_amount||0)||Number(legacy?.total||0);label=target.provider_name||target.name||target.phase||"Ouvrage";
       }
-      const paid=await env.DB.prepare("SELECT COALESCE(SUM(amount),0) total FROM project_payments WHERE company_id=? AND project_id=? AND target_type=? AND target_id=?").bind(c,projectId,targetType,targetId).first();
-      const remaining=Math.max(0,totalDue-Number(paid?.total||0));
-      if(totalDue<=0)return json({error:"Aucune valeur à payer n’est encore enregistrée pour ce bénéficiaire"},409);
+      return {totalDue,label};
+    };
+    if(action==="create"||action==="update"){
+      const projectId=text(r.project_id,100),targetType=text(r.target_type,20),targetId=text(r.target_id,100),amount=money(r.amount);
+      if(!projectId||!["supplier","ouvrage"].includes(targetType)||!targetId||amount<=0)return json({error:"Bénéficiaire et montant du paiement obligatoires"},400);
+      const wp=await writableProject(env,c,projectId);if(wp.error)return wp.error;
+      let current=null;
+      if(action==="update"){
+        current=await env.DB.prepare("SELECT * FROM project_payments WHERE id=? AND company_id=? AND project_id=?").bind(text(r.id,100),c,projectId).first();
+        if(!current)return json({error:"Versement introuvable"},404);
+      }
+      const resolved=await resolvePaymentTarget(projectId,targetType,targetId);if(resolved.error)return resolved.error;
+      const paid=action==="update"
+        ?await env.DB.prepare("SELECT COALESCE(SUM(amount),0) total FROM project_payments WHERE company_id=? AND project_id=? AND target_type=? AND target_id=? AND id<>?").bind(c,projectId,targetType,targetId,current.id).first()
+        :await env.DB.prepare("SELECT COALESCE(SUM(amount),0) total FROM project_payments WHERE company_id=? AND project_id=? AND target_type=? AND target_id=?").bind(c,projectId,targetType,targetId).first();
+      const remaining=Math.max(0,resolved.totalDue-Number(paid?.total||0));
+      if(resolved.totalDue<=0)return json({error:"Aucune valeur à payer n’est encore enregistrée pour ce bénéficiaire"},409);
       if(amount>remaining)return json({error:`Montant supérieur au reste à payer (${remaining.toLocaleString("fr-FR")} FCFA)`,code:"PAYMENT_EXCEEDS_REMAINING",remaining},409);
-      const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO project_payments(id,company_id,project_id,target_type,target_id,target_label,payment_date,amount,payment_method,reference,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,c,projectId,targetType,targetId,text(label,180),today(r.payment_date),amount,text(r.payment_method,80),text(r.reference,120),text(r.notes,800),actor.id).run();await audit(env,actor,"CREATE_PROJECT_PAYMENT","project_payment",id,ip(req),{project_id:projectId,target_type:targetType,target_id:targetId,amount});return json({ok:true,id,remaining:remaining-amount});
+      if(action==="create"){
+        const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO project_payments(id,company_id,project_id,target_type,target_id,target_label,payment_date,amount,payment_method,reference,notes,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,c,projectId,targetType,targetId,text(resolved.label,180),today(r.payment_date),amount,text(r.payment_method,80),text(r.reference,120),text(r.notes,800),actor.id).run();await audit(env,actor,"CREATE_PROJECT_PAYMENT","project_payment",id,ip(req),{project_id:projectId,target_type:targetType,target_id:targetId,amount});return json({ok:true,id,remaining:remaining-amount});
+      }
+      await env.DB.prepare("UPDATE project_payments SET target_type=?,target_id=?,target_label=?,payment_date=?,amount=?,payment_method=?,reference=?,notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=? AND project_id=?").bind(targetType,targetId,text(resolved.label,180),today(r.payment_date),amount,text(r.payment_method,80),text(r.reference,120),text(r.notes,800),current.id,c,projectId).run();
+      await audit(env,actor,"UPDATE_PROJECT_PAYMENT","project_payment",current.id,ip(req),{project_id:projectId,target_type:targetType,target_id:targetId,amount});return json({ok:true,id:current.id,remaining:remaining-amount});
+    }
+    if(action==="delete"){
+      const projectId=text(r.project_id,100),id=text(r.id,100),wp=await writableProject(env,c,projectId);if(wp.error)return wp.error;
+      const current=await env.DB.prepare("SELECT id FROM project_payments WHERE id=? AND company_id=? AND project_id=?").bind(id,c,projectId).first();if(!current)return json({error:"Versement introuvable"},404);
+      await env.DB.prepare("DELETE FROM project_payments WHERE id=? AND company_id=? AND project_id=?").bind(id,c,projectId).run();await audit(env,actor,"DELETE_PROJECT_PAYMENT","project_payment",id,ip(req),{project_id:projectId});return json({ok:true});
     }
   }
 

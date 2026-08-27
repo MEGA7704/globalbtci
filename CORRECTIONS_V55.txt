@@ -1,0 +1,17 @@
+GLOBAL BT V55 — CORRECTIONS CIBLÉES
+
+1. Popup Ajouter / Modifier un ouvrage
+- Les descriptions sont masquées dans la liste déroulante Domaine / spécialité.
+- Seul le nom de la spécialité est affiché (ex. Architecte).
+- La description professionnelle reste utilisée pour préremplir Travaux fournis / description.
+- Le texte prérempli reste modifiable par l’utilisateur.
+
+2. Projet > État financier > Historique des versements
+- Colonnes : Date, Section, Bénéficiaire, Domaine / spécialité, Mode, Référence, Versement, Actions.
+- Domaine / spécialité est récupéré automatiquement depuis le fournisseur ou l’ouvrage choisi.
+- Actions : Modifier et Supprimer.
+- La modification recontrôle le montant disponible et le reste à payer.
+- La suppression conserve l’utilisateur dans la section État financier.
+- Le PDF État financier inclut aussi la colonne Domaine / spécialité.
+
+Aucune migration D1 supplémentaire requise.
