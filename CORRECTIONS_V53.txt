@@ -1,0 +1,9 @@
+GLOBAL BT V53 — CORRECTION AJOUT DU LOGO
+
+- Correction du message « Impossible de lire cette image » lors de la sélection d’un logo.
+- La lecture du fichier utilise désormais FileReader/data URL, compatible avec la politique de sécurité du site.
+- JPG/JPEG, PNG et WebP sont acceptés, y compris lorsque le navigateur ne fournit pas correctement le type MIME mais que l’extension est valide.
+- Vérification du décodage et des dimensions avant enregistrement.
+- Optimisation automatique en JPEG pour stockage et impression PDF.
+- Ajout de blob: à img-src dans la politique CSP pour compatibilité complémentaire des aperçus locaux.
+- Règle inchangée : logo personnalisé réservé aux Administrateurs des comptes Standard/Business actifs ; Free conserve le logo système.

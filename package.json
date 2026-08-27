@@ -1,8 +1,8 @@
 {
   "name": "global-bt-cloudflare",
-  "version": "51.0.0",
+  "version": "53.0.0",
   "private": true,
-  "description": "GLOBAL BT - V50 : formulaires projet simplifiés et maintien de la vue après suppression",
+  "description": "GLOBAL BT - V53 : correction de lecture et ajout du logo entreprise",
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node --check public/_worker.js && node --check public/app.js",

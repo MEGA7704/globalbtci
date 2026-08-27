@@ -51,18 +51,36 @@ function dataUrlBytes(dataUrl){const m=/^data:image\/jpeg;base64,(.+)$/i.exec(St
 function jpegDimensions(bytes){if(!bytes||bytes.length<4||bytes[0]!==0xff||bytes[1]!==0xd8)return null;let i=2;while(i+9<bytes.length){if(bytes[i]!==0xff){i++;continue}const marker=bytes[i+1];i+=2;if(marker===0xd8||marker===0xd9)continue;if(i+1>=bytes.length)break;const len=(bytes[i]<<8)+bytes[i+1];if(len<2||i+len>bytes.length)break;if([0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf].includes(marker)){return {height:(bytes[i+3]<<8)+bytes[i+4],width:(bytes[i+5]<<8)+bytes[i+6]}}i+=len}return null}
 async function normalizeCompanyLogo(file){
   if(!file)return null;
-  if(!["image/jpeg","image/png","image/webp"].includes(file.type))throw new Error("Format du logo non accepté. Utilisez JPG, PNG ou WebP.");
+  const allowed=["image/jpeg","image/jpg","image/png","image/webp"],name=String(file.name||"").toLowerCase(),declared=String(file.type||"").toLowerCase();
+  if(declared&&!allowed.includes(declared))throw new Error("Format du logo non accepté. Utilisez JPG, PNG ou WebP.");
+  if(!declared&&!/\.(jpe?g|png|webp)$/i.test(name))throw new Error("Format du logo non reconnu. Utilisez JPG, PNG ou WebP.");
   if(file.size>6*1024*1024)throw new Error("Le fichier du logo est trop volumineux (maximum 6 Mo).");
-  const url=URL.createObjectURL(file);
-  try{
-    const img=await new Promise((resolve,reject)=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=()=>reject(new Error("Impossible de lire cette image."));im.src=url});
-    const maxW=600,maxH=240,scale=Math.min(1,maxW/img.naturalWidth,maxH/img.naturalHeight),w=Math.max(1,Math.round(img.naturalWidth*scale)),h=Math.max(1,Math.round(img.naturalHeight*scale));
-    const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;const ctx=canvas.getContext("2d");ctx.fillStyle="#ffffff";ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);
-    let out=canvas.toDataURL("image/jpeg",.9);
-    if(out.length>390000)out=canvas.toDataURL("image/jpeg",.72);
-    if(out.length>390000)throw new Error("Le logo reste trop volumineux après optimisation. Choisissez une image plus simple.");
-    return out;
-  }finally{URL.revokeObjectURL(url)}
+  const source=await new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result||""));
+    reader.onerror=()=>reject(new Error("Impossible de lire le fichier du logo."));
+    reader.onabort=()=>reject(new Error("Lecture du logo interrompue."));
+    reader.readAsDataURL(file);
+  });
+  if(!/^data:image\/(?:jpeg|jpg|png|webp);base64,/i.test(source))throw new Error("Le fichier sélectionné n’est pas une image JPG, PNG ou WebP valide.");
+  const img=await new Promise((resolve,reject)=>{
+    const im=new Image();
+    im.onload=()=>resolve(im);
+    im.onerror=()=>reject(new Error("Impossible de décoder cette image. Vérifiez que le fichier JPG, PNG ou WebP n’est pas endommagé."));
+    im.src=source;
+  });
+  const iw=Number(img.naturalWidth||img.width||0),ih=Number(img.naturalHeight||img.height||0);
+  if(!iw||!ih)throw new Error("Dimensions du logo invalides.");
+  const maxW=600,maxH=240,scale=Math.min(1,maxW/iw,maxH/ih),w=Math.max(1,Math.round(iw*scale)),h=Math.max(1,Math.round(ih*scale));
+  const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;const ctx=canvas.getContext("2d");
+  if(!ctx)throw new Error("Votre navigateur ne permet pas de préparer le logo.");
+  ctx.fillStyle="#ffffff";ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);
+  let out=canvas.toDataURL("image/jpeg",.88);
+  if(out.length>390000)out=canvas.toDataURL("image/jpeg",.70);
+  if(out.length>390000)out=canvas.toDataURL("image/jpeg",.55);
+  if(!/^data:image\/jpeg;base64,/i.test(out))throw new Error("Impossible de préparer le logo pour l’enregistrement.");
+  if(out.length>390000)throw new Error("Le logo reste trop volumineux après optimisation. Choisissez une image plus simple.");
+  return out;
 }
 const PDF_GREEN=[0.024,0.247,0.216],PDF_GREEN_2=[0.025,0.282,0.247],PDF_GOLD=[0.79,0.57,0.14],PDF_TEXT=[0.08,0.18,0.16],PDF_GRAY=[0.72,0.77,0.75],PDF_LIGHT=[0.973,0.98,0.98];
 function pdfNum(n){return Number(n||0).toFixed(2).replace(/\.00$/,'')}
