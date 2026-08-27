@@ -585,15 +585,117 @@ function catalogTradeOptions(selected=""){
 }
 function renderProjectTradeCatalogForm(projectId,trade=null){
   return `<form id="${trade?"v38ProjectTradeEditForm":"v38ProjectTradeForm"}" data-project="${esc(projectId)}" ${trade?`data-id="${esc(trade.id)}"`:""} class="formgrid">
-    <label>Métier<input name="trade_name" value="${esc(trade?.phase||"")}" required placeholder="Ex. Maçonnerie"></label>
-    <label>Domaine / spécialité<input name="specialty" value="${esc(trade?.name||"")}" required placeholder="Ex. Gros œuvre"></label>
+    <label>Métier
+      <select id="v54WorkTradeGroup" required>
+        <option value="">Sélectionner un métier</option>
+        ${PROFESSIONAL_TRADE_GROUPS.map(g=>`<option value="${esc(g.key)}">${esc(g.label)}${g.key==="autres"?" (ajouter champ à remplir)":""}</option>`).join("")}
+      </select>
+    </label>
+    <label id="v54CustomWorkTradeWrap" class="hidden">Autre métier
+      <input id="v54CustomWorkTrade" type="text" placeholder="Précisez le métier">
+    </label>
+    <label id="v54WorkSpecialtyWrap">Domaine / spécialité
+      <select id="v54WorkSpecialty" required disabled>
+        <option value="">Choisissez d’abord un métier</option>
+      </select>
+    </label>
+    <label id="v54CustomWorkSpecialtyWrap" class="hidden">Autre domaine / spécialité
+      <input id="v54CustomWorkSpecialty" type="text" placeholder="Précisez le domaine / spécialité">
+    </label>
+    <input id="v54ResolvedWorkTrade" type="hidden" name="trade_name" value="${esc(trade?.phase||"")}">
+    <input id="v54ResolvedWorkSpecialty" type="hidden" name="specialty" value="${esc(trade?.name||"")}">
     <label>Nom du prestataire / artisan<input name="provider_name" value="${esc(trade?.provider_name||"")}" required></label>
     <label>Contact<input name="provider_contact" value="${esc(trade?.provider_contact||"")}" required></label>
     <label>Localisation<input name="provider_city" value="${esc(trade?.provider_city||"")}" required></label>
     <label>Main-d'œuvre convenue (FCFA)<input name="labor_amount" type="number" min="0" value="${Number(trade?.labor_amount||0)}" required></label>
-    <label class="span2">Travaux fournis / description<textarea name="description" rows="4" required placeholder="Décrivez les travaux fournis ou à réaliser">${esc(trade?.description||"")}</textarea></label>
+    <label class="span2">Travaux fournis / description
+      <textarea id="v54WorkDescription" name="description" rows="5" required placeholder="La description du domaine / spécialité choisi sera ajoutée automatiquement et restera modifiable.">${esc(trade?.description||"")}</textarea>
+    </label>
     <button class="btn primary span2" type="submit">${trade?"Enregistrer les modifications":"Ajouter l’ouvrage"}</button>
   </form>`;
+}
+function initProjectTradeCatalogForm(root=document,trade=null){
+  const form=root.querySelector("#v38ProjectTradeForm, #v38ProjectTradeEditForm");
+  if(!form)return;
+  const group=form.querySelector("#v54WorkTradeGroup");
+  const customGroupWrap=form.querySelector("#v54CustomWorkTradeWrap");
+  const customGroup=form.querySelector("#v54CustomWorkTrade");
+  const specialtyWrap=form.querySelector("#v54WorkSpecialtyWrap");
+  const specialty=form.querySelector("#v54WorkSpecialty");
+  const customSpecialtyWrap=form.querySelector("#v54CustomWorkSpecialtyWrap");
+  const customSpecialty=form.querySelector("#v54CustomWorkSpecialty");
+  const resolvedGroup=form.querySelector("#v54ResolvedWorkTrade");
+  const resolvedSpecialty=form.querySelector("#v54ResolvedWorkSpecialty");
+  const description=form.querySelector("#v54WorkDescription");
+  const existingPhase=(trade?.phase||"").trim();
+  const existingSpecialty=(trade?.name||"").trim();
+  const existingDescription=(trade?.description||"").trim();
+  let initializing=true;
+
+  const setCustomRequired=(el,on)=>{if(on)el.setAttribute("required","");else el.removeAttribute("required")};
+  const standardDescription=(name,text)=>name&&text?`${name} : ${text}`:(text||name||"");
+  const updateCustomResolved=()=>{
+    if(group.value==="autres")resolvedGroup.value=customGroup.value.trim();
+    if(group.value==="autres"||specialty.value==="Autre")resolvedSpecialty.value=customSpecialty.value.trim();
+  };
+  const applySpecialtyDescription=()=>{
+    const g=PROFESSIONAL_TRADE_GROUPS.find(x=>x.key===group.value);
+    if(!g||g.key==="autres"||specialty.value==="Autre"||!specialty.value)return;
+    const item=g.activities.find(([name])=>name===specialty.value);
+    if(!item)return;
+    resolvedSpecialty.value=item[0];
+    if(!initializing||!existingDescription)description.value=standardDescription(item[0],item[1]);
+  };
+  const refreshSpecialty=()=>{
+    const g=PROFESSIONAL_TRADE_GROUPS.find(x=>x.key===group.value);
+    if(!g){
+      resolvedGroup.value="";resolvedSpecialty.value="";
+      customGroupWrap.classList.add("hidden");customSpecialtyWrap.classList.add("hidden");specialtyWrap.classList.remove("hidden");
+      specialty.disabled=true;specialty.innerHTML='<option value="">Choisissez d’abord un métier</option>';
+      setCustomRequired(customGroup,false);setCustomRequired(customSpecialty,false);return;
+    }
+    const isOtherGroup=g.key==="autres";
+    customGroupWrap.classList.toggle("hidden",!isOtherGroup);
+    specialtyWrap.classList.toggle("hidden",isOtherGroup);
+    customSpecialtyWrap.classList.toggle("hidden",!isOtherGroup);
+    setCustomRequired(customGroup,isOtherGroup);setCustomRequired(customSpecialty,isOtherGroup);
+    if(isOtherGroup){
+      specialty.disabled=true;specialty.removeAttribute("required");
+      resolvedGroup.value=customGroup.value.trim();resolvedSpecialty.value=customSpecialty.value.trim();
+      return;
+    }
+    resolvedGroup.value=g.label;
+    specialty.disabled=false;specialty.setAttribute("required","");
+    specialty.innerHTML=`<option value="">Sélectionner un domaine / spécialité</option>${g.activities.map(([name,text])=>`<option value="${esc(name)}">${esc(name==="Autre"?"Autre (ajouter champ à remplir)":`${name} — ${text}`)}</option>`).join("")}`;
+    const match=g.activities.find(([name])=>name===existingSpecialty);
+    if(initializing&&match)specialty.value=match[0];
+    else if(initializing&&existingSpecialty){specialty.value="Autre";customSpecialty.value=existingSpecialty}
+    const other=specialty.value==="Autre";
+    customSpecialtyWrap.classList.toggle("hidden",!other);setCustomRequired(customSpecialty,other);
+    if(other)resolvedSpecialty.value=customSpecialty.value.trim();else applySpecialtyDescription();
+  };
+  const onSpecialtyChange=()=>{
+    const other=specialty.value==="Autre";
+    customSpecialtyWrap.classList.toggle("hidden",!other);setCustomRequired(customSpecialty,other);
+    if(other){resolvedSpecialty.value=customSpecialty.value.trim();if(!initializing)description.value=""}
+    else applySpecialtyDescription();
+  };
+
+  const matchingGroup=PROFESSIONAL_TRADE_GROUPS.find(g=>g.label===existingPhase);
+  if(trade){
+    if(matchingGroup)group.value=matchingGroup.key;
+    else{group.value="autres";customGroup.value=existingPhase;customSpecialty.value=existingSpecialty}
+  }
+  group.addEventListener("change",()=>{
+    initializing=false;customGroup.value="";customSpecialty.value="";description.value="";refreshSpecialty();
+  });
+  specialty.addEventListener("change",()=>{initializing=false;customSpecialty.value="";onSpecialtyChange()});
+  customGroup.addEventListener("input",updateCustomResolved);
+  customSpecialty.addEventListener("input",updateCustomResolved);
+  refreshSpecialty();
+  if(trade&&existingDescription)description.value=existingDescription;
+  updateCustomResolved();
+  initializing=false;
 }
 function projectOuvrageLabor(projectId,trade){
   const configured=Number(trade?.labor_amount||0);
@@ -902,8 +1004,8 @@ function v36ProjectPage(projectId,initialView="suppliers"){
       bodyRows.push(totalRow(5,"TOTAL",[cash(sumLabor),cash(sumPaid),cash(sumRemain)]));
       content.innerHTML=`<div class="project-page-section-head"><div><h2>Ouvrages du projet</h2><p>Enregistrez directement le métier, le domaine ou la spécialité, le prestataire, la main-d'œuvre et les travaux convenus.</p></div><div class="project-page-section-actions"><button id="v49PrintWorks" class="btn secondary">Imprimer la liste PDF A4</button><button id="v47AddWork" class="btn primary">+ Ajouter un ouvrage</button></div></div><div class="project-page-card v47-work-table">${table(["Métiers","Domaine / spécialité","Nom","Contact","Localisation","Main-d'œuvre","Versement reçu","Versement restant","Actions"],bodyRows)}</div>${pager(view,trades.length)}`;
       $("#v49PrintWorks").onclick=printWorkList;
-      $("#v47AddWork").onclick=()=>modal(`<h2>Ajouter un ouvrage · ${esc(p.name)}</h2>${renderProjectTradeCatalogForm(projectId)}`);
-      document.querySelectorAll(".v47-edit-work").forEach(b=>b.onclick=()=>{const t=trades.find(x=>x.id===b.dataset.id);if(t)modal(`<h2>Modifier l’ouvrage</h2>${renderProjectTradeCatalogForm(projectId,t)}`)});
+      $("#v47AddWork").onclick=()=>{modal(`<h2>Ajouter un ouvrage · ${esc(p.name)}</h2>${renderProjectTradeCatalogForm(projectId)}`);initProjectTradeCatalogForm($("#modalBody"),null)};
+      document.querySelectorAll(".v47-edit-work").forEach(b=>b.onclick=()=>{const t=trades.find(x=>x.id===b.dataset.id);if(t){modal(`<h2>Modifier l’ouvrage</h2>${renderProjectTradeCatalogForm(projectId,t)}`);initProjectTradeCatalogForm($("#modalBody"),t)}});
       document.querySelectorAll(".v47-print-work").forEach(b=>b.onclick=()=>{const t=trades.find(x=>x.id===b.dataset.id);if(t)printWork(t)});
       document.querySelectorAll(".v47-delete-work").forEach(b=>b.onclick=()=>confirmBox("Supprimer cet ouvrage du projet ?",async()=>{await post("/api/save",{entity:"trade",action:"delete",record:{id:b.dataset.id,project_id:projectId}});await reload();v36ProjectPage(projectId,"works");toast("Ouvrage supprimé")}));
       bindPager(view,trades.length);

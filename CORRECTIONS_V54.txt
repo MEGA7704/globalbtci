@@ -1,0 +1,15 @@
+GLOBAL BT — CORRECTIONS V54
+
+SECTION PROJET / OUVRAGES
+- Le champ « Métier » du popup Ajouter / Modifier un ouvrage est désormais une liste déroulante professionnelle.
+- Les 7 familles disponibles sont : Conception/Études/Gestion de projet, Gros Œuvre, Enveloppe du bâtiment, Second Œuvre, Travaux Publics, Encadrement de chantier et Autres.
+- Le choix « Autres » affiche un champ libre obligatoire.
+- Le champ « Domaine / spécialité » devient une liste dynamique dépendante du métier sélectionné.
+- Chaque liste reprend les spécialités et descriptions professionnelles définies dans le référentiel du programme.
+- Le choix « Autre » dans une spécialité affiche un champ libre obligatoire.
+- Lorsqu’une spécialité standard est choisie, le champ « Travaux fournis / description » est automatiquement prérempli avec « Spécialité : description ».
+- La description préremplie reste entièrement modifiable par l’utilisateur avant enregistrement.
+- En modification, les anciennes valeurs et les descriptions déjà personnalisées sont conservées.
+- Les anciens ouvrages saisis avec un métier ou une spécialité personnalisés restent compatibles : ils sont repris via les champs « Autres ».
+
+Aucune migration D1 requise : les champs enregistrés restent trade_name/phase, specialty/name et description.
