@@ -862,3 +862,14 @@ table td.center,.center{ text-align:center!important }
 .project-total-row td:first-child{text-align:left!important}
 .project-page-section-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
 @media(max-width:1000px){.project-page-section-actions{width:100%;justify-content:flex-start}}
+
+/* ===== V51 — logo entreprise Standard / Business ===== */
+.brandmark.has-logo{background:#fff;padding:4px;overflow:hidden;border:1px solid rgba(255,255,255,.4)}
+.brandmark.has-logo img{display:block;width:100%;height:100%;object-fit:contain;border-radius:8px}
+.company-logo-editor{display:grid;grid-template-columns:150px 1fr;gap:16px;align-items:center;padding:14px;border:1px solid var(--line);border-radius:14px;background:#f8fbfa}
+.company-logo-preview{height:92px;border:1px dashed #aabbb7;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:10px}
+.company-logo-preview img{max-width:100%;max-height:100%;object-fit:contain}
+.company-logo-controls{display:flex;flex-direction:column;gap:9px}.company-logo-controls label{margin:0}.company-logo-controls small{color:var(--muted);line-height:1.45}
+.logo-system-preview{width:60px;height:60px;min-width:60px;border-radius:14px;font-size:.9rem}
+.logo-free-lock{display:flex;align-items:center;gap:15px;padding:14px 16px;border:1px solid #d9e2df;border-radius:14px;background:#f5f8f7}.logo-free-lock strong{display:block;color:#164f47}.logo-free-lock p{margin:5px 0 0;color:var(--muted);line-height:1.5}
+@media(max-width:640px){.company-logo-editor{grid-template-columns:1fr}.company-logo-preview{height:100px}.logo-free-lock{align-items:flex-start}}

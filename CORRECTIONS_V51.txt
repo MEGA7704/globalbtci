@@ -1,0 +1,9 @@
+GLOBAL BT V51 — LOGO ENTREPRISE
+
+- PARAMÈTRES / Mon compte : ajout/remplacement du logo par l’Administrateur.
+- Fonction disponible uniquement pour Standard et Business actifs.
+- Free conserve toujours le logo GLOBAL BT prédéfini.
+- Contrôle serveur empêchant un compte Free de forcer un logo personnalisé.
+- Formats acceptés : JPG, PNG, WebP ; optimisation automatique en JPEG.
+- Logo personnalisé affiché dans l’en-tête de l’application et sur la première page des PDF A4.
+- En cas d’expiration/déclassement vers Free, le logo système est repris automatiquement.
