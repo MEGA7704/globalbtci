@@ -972,3 +972,48 @@ table td.center,.center{ text-align:center!important }
       url('/assets/global-bt-hero.png') center top / cover scroll no-repeat;
   }
 }
+
+
+/* ===== V61 — PERSONNAGE DÉTOURÉ SUR LA PAGE D’ACCUEIL ===== */
+/* Le personnage est intégré directement au décor : aucun fond, cadre, contour, halo ou bulle. */
+.landing-portrait-wrap{
+  position:relative;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  min-height:610px;
+  overflow:visible!important;
+  isolation:auto!important;
+  background:transparent!important;
+  border:0!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+  outline:0!important;
+}
+.landing-portrait-wrap::before,
+.landing-portrait-wrap::after,
+.landing-photo-halo{
+  display:none!important;
+  content:none!important;
+  background:none!important;
+  box-shadow:none!important;
+}
+.landing-portrait{
+  display:block;
+  width:min(100%,560px)!important;
+  height:auto!important;
+  max-height:610px;
+  object-fit:contain!important;
+  object-position:center bottom!important;
+  background:transparent!important;
+  border:0!important;
+  border-radius:0!important;
+  outline:0!important;
+  box-shadow:none!important;
+  filter:none!important;
+  -webkit-mask-image:none!important;
+  mask-image:none!important;
+}
+@media(max-width:1120px){
+  .landing-portrait-wrap{background:transparent!important;box-shadow:none!important;border:0!important}
+}

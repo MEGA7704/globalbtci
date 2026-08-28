@@ -1,0 +1,9 @@
+GLOBAL BT — V61
+
+Correction ciblée de la page d’accueil :
+- remplacement de l’image du personnage par une version à fond transparent ;
+- suppression de tout fond propre au bloc personnage ;
+- suppression des contours, halos, bulles, bordures et ombres ;
+- suppression du masque de fondu autour du personnage ;
+- intégration naturelle du personnage directement sur l’arrière-plan général de la page d’accueil ;
+- aucune modification des pages de travail ni de leurs fonctions.
