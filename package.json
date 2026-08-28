@@ -1,8 +1,8 @@
 {
   "name": "global-bt-cloudflare",
-  "version": "58.0.0",
+  "version": "60.0.0",
   "private": true,
-  "description": "GLOBAL BT - V58 : liste des projets sans défilement horizontal et menu Rapports retiré",
+  "description": "GLOBAL BT - V60 : nouvelle photo et arrière-plan unique de la page d’accueil",
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node --check public/_worker.js && node --check public/app.js",

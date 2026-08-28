@@ -1,0 +1,9 @@
+GLOBAL BT — V60
+
+Correction ciblée de la page d'accueil :
+- remplacement de l'ancienne photo par la nouvelle photo fournie (btp.png) ;
+- utilisation de cette photo comme arrière-plan général de toute la page d'accueil ;
+- ajout d'un voile clair pour conserver une excellente lisibilité ;
+- conservation de la nouvelle photo dans le bloc visuel principal ;
+- cartes et formulaire légèrement translucides pour obtenir un décor continu ;
+- aucun changement apporté aux pages internes, données, projets, paiements ou règles de sécurité.

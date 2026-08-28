@@ -908,8 +908,67 @@ table td.center,.center{ text-align:center!important }
 .v41-project-table .project-number-cell,.v41-project-table .project-dates,.v41-project-table td.center,.v41-project-table .v41-project-actions-cell{text-align:center!important}
 .v41-project-table .project-dates{display:table-cell!important;white-space:normal!important}
 .v41-project-table .project-dates span,.v41-project-table .project-dates small{display:block;margin:1px 0;font-size:.69rem}
-.v41-project-table .project-actions{display:flex!important;flex-direction:column;align-items:stretch;justify-content:center!important;gap:4px!important;width:100%}
-.v41-project-table .project-actions .btn{width:100%;min-width:0;padding:5px 4px!important;font-size:.66rem!important;line-height:1.15;white-space:normal}
+.v41-project-table .project-actions{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;align-items:center!important;justify-content:center!important;gap:3px!important;width:100%;min-width:0}
+.v41-project-table .project-actions .btn{flex:1 1 0!important;width:auto!important;min-width:0!important;padding:5px 2px!important;font-size:.58rem!important;line-height:1.15;white-space:nowrap!important}
 .v58-status-button{max-width:100%;border:1px solid #cadbd7;cursor:pointer;font:inherit;color:#174e47;white-space:normal;line-height:1.15}
 .v58-status-button:hover{background:#dcebe7}
-@media(max-width:1100px){.v41-projects-panel{padding:12px}.v41-project-table th,.v41-project-table td{padding:6px 3px!important;font-size:.62rem!important}.v41-project-table .project-actions .btn{font-size:.6rem!important;padding:4px 2px!important}.v41-project-table .project-dates span,.v41-project-table .project-dates small{font-size:.61rem}}
+@media(max-width:1100px){.v41-projects-panel{padding:12px}.v41-project-table th,.v41-project-table td{padding:6px 3px!important;font-size:.62rem!important}.v41-project-table .project-actions{gap:2px!important}.v41-project-table .project-actions .btn{font-size:.52rem!important;padding:4px 1px!important}.v41-project-table .project-dates span,.v41-project-table .project-dates small{font-size:.61rem}}
+
+/* ===== V60 — NOUVELLE PHOTO ET ARRIÈRE-PLAN UNIQUE DE L'ACCUEIL ===== */
+.auth-screen.landing-home{
+  position:relative;
+  isolation:isolate;
+  background:
+    linear-gradient(115deg,rgba(245,249,248,.94) 0%,rgba(245,249,248,.84) 38%,rgba(239,245,243,.78) 66%,rgba(235,242,240,.88) 100%),
+    url('/assets/global-bt-hero.png') center 20% / cover fixed no-repeat;
+}
+.auth-screen.landing-home::before{
+  content:"";
+  position:absolute;
+  z-index:-1;
+  inset:0;
+  pointer-events:none;
+  background:linear-gradient(to bottom,rgba(255,255,255,.08),rgba(236,244,241,.28));
+}
+.landing-shell{
+  position:relative;
+  z-index:1;
+}
+.landing-portrait-wrap{
+  background:rgba(244,249,247,.18);
+  border-radius:34px 34px 0 0;
+  box-shadow:0 20px 55px rgba(18,53,48,.14);
+}
+.landing-portrait-wrap::before{
+  display:none;
+}
+.landing-portrait{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position:center 18%;
+  border-radius:34px 34px 0 0;
+  box-shadow:none;
+  filter:none;
+  -webkit-mask-image:linear-gradient(to bottom,#000 0,#000 92%,transparent 100%);
+  mask-image:linear-gradient(to bottom,#000 0,#000 92%,transparent 100%);
+}
+.landing-feature-card,
+.landing-auth-card,
+.landing-services{
+  background:rgba(255,255,255,.90);
+  -webkit-backdrop-filter:blur(9px);
+  backdrop-filter:blur(9px);
+}
+.landing-pill{
+  background:rgba(248,252,250,.88);
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+}
+@media(max-width:820px){
+  .auth-screen.landing-home{
+    background:
+      linear-gradient(rgba(245,249,248,.91),rgba(238,245,242,.91)),
+      url('/assets/global-bt-hero.png') center top / cover scroll no-repeat;
+  }
+}
