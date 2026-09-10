@@ -110,9 +110,49 @@ async function nextProjectNumber(env,companyId,dateHint){
   return `${prefix}${String(next).padStart(3,"0")}`;
 }
 
+async function ensureStandardPlanSchema(env){
+  const migrated=await env.DB.prepare("SELECT value FROM app_meta WHERE key='migration_standard_plan_check_v62'").first();
+  if(migrated?.value==="1")return;
+
+  let c=await columns(env,"companies");
+  const hasLegacy=c.has("plan_legacy_v62");
+
+  if(hasLegacy){
+    if(!c.has("plan")){
+      await env.DB.prepare("ALTER TABLE companies ADD COLUMN plan TEXT NOT NULL DEFAULT 'free' CHECK(plan IN ('free','standard','business'))").run();
+      c=await columns(env,"companies");
+    }
+    // Reprise d'une migration interrompue : l'ancien schéma ne pouvait contenir que Free ou Business.
+    await env.DB.prepare("UPDATE companies SET plan='business' WHERE lower(COALESCE(plan_legacy_v62,''))='business' AND lower(COALESCE(plan,'free'))='free'").run();
+  }else if(c.has("plan")){
+    const row=await env.DB.prepare("SELECT sql FROM sqlite_schema WHERE type='table' AND name='companies'").first();
+    const compact=String(row?.sql||"").toLowerCase().replace(/\s+/g,"");
+    const blocksStandard=compact.includes("check(planin('free','business'))");
+    if(blocksStandard){
+      // Ancienne contrainte D1 : CHECK(plan IN ('free','business')).
+      // On conserve la colonne historique et on recrée `plan` avec Standard autorisé.
+      try{
+        await env.DB.prepare("ALTER TABLE companies RENAME COLUMN plan TO plan_legacy_v62").run();
+      }catch(e){
+        // Deux premières requêtes après déploiement peuvent lancer la réparation en parallèle.
+        // Si l'autre requête a déjà renommé la colonne, on reprend simplement la migration.
+        const afterRename=await columns(env,"companies");
+        if(!afterRename.has("plan_legacy_v62"))throw e;
+      }
+      const afterRename=await columns(env,"companies");
+      if(!afterRename.has("plan"))await env.DB.prepare("ALTER TABLE companies ADD COLUMN plan TEXT NOT NULL DEFAULT 'free' CHECK(plan IN ('free','standard','business'))").run();
+      await env.DB.prepare("UPDATE companies SET plan='business' WHERE lower(COALESCE(plan_legacy_v62,''))='business' AND lower(COALESCE(plan,'free'))='free'").run();
+    }
+  }else{
+    await env.DB.prepare("ALTER TABLE companies ADD COLUMN plan TEXT NOT NULL DEFAULT 'free' CHECK(plan IN ('free','standard','business'))").run();
+  }
+
+  await env.DB.prepare("INSERT INTO app_meta(key,value,updated_at) VALUES('migration_standard_plan_check_v62','1',CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value='1',updated_at=CURRENT_TIMESTAMP").run();
+}
+
 async function ensureSchema(env){
   const sql=[
-`CREATE TABLE IF NOT EXISTS companies(id TEXT PRIMARY KEY,name TEXT NOT NULL,code TEXT,phone TEXT,email TEXT,city TEXT,address TEXT,slogan TEXT,taxpayer_account TEXT,rccm TEXT,capital INTEGER NOT NULL DEFAULT 0,logo_data TEXT,logo_updated_at TEXT,plan TEXT NOT NULL DEFAULT 'free',plan_started_at TEXT NOT NULL,plan_expires_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+`CREATE TABLE IF NOT EXISTS companies(id TEXT PRIMARY KEY,name TEXT NOT NULL,code TEXT,phone TEXT,email TEXT,city TEXT,address TEXT,slogan TEXT,taxpayer_account TEXT,rccm TEXT,capital INTEGER NOT NULL DEFAULT 0,logo_data TEXT,logo_updated_at TEXT,plan TEXT NOT NULL DEFAULT 'free' CHECK(plan IN ('free','standard','business')),plan_started_at TEXT NOT NULL,plan_expires_at TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 `CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,company_id TEXT,email TEXT NOT NULL COLLATE NOCASE UNIQUE,full_name TEXT NOT NULL,phone TEXT,role TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',password_version INTEGER NOT NULL DEFAULT 1,must_change_password INTEGER NOT NULL DEFAULT 0,created_by TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 `CREATE TABLE IF NOT EXISTS user_credentials(user_id TEXT PRIMARY KEY,password_hash TEXT NOT NULL,password_salt TEXT NOT NULL,password_iterations INTEGER NOT NULL DEFAULT 210000,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 `CREATE TABLE IF NOT EXISTS auth_credentials_v2(user_id TEXT PRIMARY KEY,password_hash TEXT NOT NULL,password_salt TEXT NOT NULL,password_iterations INTEGER NOT NULL DEFAULT 210000,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
@@ -154,6 +194,9 @@ async function ensureSchema(env){
   await ensureColumn(env,"companies","logo_data","TEXT");
   await ensureColumn(env,"companies","logo_updated_at","TEXT");
   await ensureColumn(env,"companies","updated_at","TEXT");
+
+  // V62 : corrige les anciennes bases D1 dont CHECK(plan) refusait la formule Standard.
+  await ensureStandardPlanSchema(env);
 
   // Réparation complète des anciens schémas métier.
   await ensureColumn(env,"projects","project_type","TEXT");
@@ -303,7 +346,7 @@ async function ensureSchema(env){
   await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_company_project_number ON projects(company_id,project_number) WHERE project_number IS NOT NULL AND project_number<>''").run();
 
 }
-const SCHEMA_READY_KEY="schema:global-bt:v51";
+const SCHEMA_READY_KEY="schema:global-bt:v62";
 async function markSchemaReady(env){await env.GLOBAL_BT_KV.put(SCHEMA_READY_KEY,"1")}
 async function requireSchemaReady(env){
   if((await env.GLOBAL_BT_KV.get(SCHEMA_READY_KEY))==="1")return true;
@@ -312,7 +355,7 @@ async function requireSchemaReady(env){
     await markSchemaReady(env);
     return true;
   }catch(e){
-    console.error(JSON.stringify({event:"schema_v41_prepare_error",message:e?.message||String(e)}));
+    console.error(JSON.stringify({event:"schema_v62_prepare_error",message:e?.message||String(e)}));
     return false;
   }
 }
@@ -583,11 +626,11 @@ async function bootstrap(req,env){
     await clearFail(env,ip(req),em);
     await audit(env,{id:su.id,company_id:null},"SUPERADMIN_READY","user",su.id,ip(req),{auth:"cloudflare_secret"});
     try{await migrateLegacyCredentials(env)}catch(e){console.error(JSON.stringify({event:"legacy_credentials_warning",message:e?.message||String(e)}))}
-    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"58.0.0"});
+    return json({ok:true,superadmin_ready:true,superadmin_auth:"cloudflare_secret",app_version:"62.0.0"});
   }catch(e){
     const msg=String(e?.message||"");
     console.error(JSON.stringify({event:"bootstrap_error",stage,message:msg,stack:e?.stack||""}));
-    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"58.0.0"},500);
+    return json({error:"Initialisation Super Admin impossible",stage,code:msg.slice(0,120)||"BOOTSTRAP_ERROR",app_version:"62.0.0"},500);
   }
 }
 async function login(req,env){
@@ -1260,7 +1303,7 @@ async function cryptoHealth(req,env){
     const test=await makeMemberCredential("GlobalBT-Test-2026!");
     return json({
       ok:true,
-      app_version:"58.0.0",
+      app_version:"62.0.0",
       algorithm:"PBKDF2-SHA-256",
       iterations:test.password_iterations,
       elapsed_ms:Date.now()-started
@@ -1268,7 +1311,7 @@ async function cryptoHealth(req,env){
   }catch(e){
     return json({
       ok:false,
-      app_version:"58.0.0",
+      app_version:"62.0.0",
       code:e?.message||"PASSWORD_HASH_FAILED",
       elapsed_ms:Date.now()-started
     },500);
@@ -1302,7 +1345,7 @@ async function health(req,env){
   const secretReady=!!env.SUPERADMIN_EMAIL&&!!env.SUPERADMIN_INITIAL_PASSWORD;
   return json({
     ok:!!env.DB&&!!env.GLOBAL_BT_KV,
-    app_version:"58.0.0",
+    app_version:"62.0.0",
     d1_bound:!!env.DB,
     kv_bound:!!env.GLOBAL_BT_KV,
     superadmin_email_configured:!!env.SUPERADMIN_EMAIL,
@@ -1312,7 +1355,7 @@ async function health(req,env){
     superadmin_ready:superadmin,
     superadmin_credential_ready:superadmin&&secretReady,
     superadmin_auth:"cloudflare_secret",
-    member_auth_store:"GLOBAL_BT_KV / cred:v1:<user_id>",schema_repair_version:"39"
+    member_auth_store:"GLOBAL_BT_KV / cred:v1:<user_id>",schema_repair_version:"62"
   });
 }
 

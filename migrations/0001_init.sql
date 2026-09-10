@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS companies (
   address TEXT,
   city TEXT,
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','disabled','deleted')),
-  plan TEXT NOT NULL DEFAULT 'free' CHECK(plan IN ('free','business')),
+  plan TEXT NOT NULL DEFAULT 'free' CHECK(plan IN ('free','standard','business')),
   plan_started_at TEXT NOT NULL,
   plan_expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
