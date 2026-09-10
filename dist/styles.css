@@ -1017,3 +1017,64 @@ table td.center,.center{ text-align:center!important }
 @media(max-width:1120px){
   .landing-portrait-wrap{background:transparent!important;box-shadow:none!important;border:0!important}
 }
+
+
+/* ===== CORRECTION CIBLÉE — FOOTER MEGA SERVICES + GUIDE D’UTILISATION ===== */
+.landing-footer.landing-footer-company{
+  margin:0 -38px;
+  padding:12px 38px;
+  background:#06463f;
+  border-top:2px solid #d8a232;
+  color:#f0f7f6;
+  display:block;
+}
+.footer-company-line{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  flex-wrap:nowrap;
+  white-space:nowrap;
+  font-size:clamp(.64rem,.74vw,.78rem);
+  line-height:1.35;
+}
+.footer-company-line strong{color:#e7b441;font-weight:900;letter-spacing:.015em}
+.footer-company-line b{font-weight:850;color:#fff}
+.footer-company-line a{color:#f6fbfa;text-decoration:none}
+.footer-company-line a:not(.footer-guide-btn):hover{text-decoration:underline;color:#e9bd57}
+.footer-sep{color:#d7aa3e;opacity:.9;font-weight:900}
+.footer-guide-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:34px;
+  padding:0 13px;
+  margin-left:5px;
+  border:1px solid #e6b548;
+  border-radius:8px;
+  background:linear-gradient(145deg,#e4ae35,#c98f20);
+  color:#fff!important;
+  font-weight:900;
+  box-shadow:0 5px 14px rgba(0,0,0,.14);
+  transition:transform .16s ease,box-shadow .16s ease,filter .16s ease;
+}
+.footer-guide-btn:hover{transform:translateY(-1px);box-shadow:0 8px 18px rgba(0,0,0,.18);filter:brightness(1.04)}
+.footer-guide-btn:focus-visible{outline:3px solid rgba(239,194,90,.45);outline-offset:2px}
+@media(max-width:1320px){
+  .landing-footer.landing-footer-company{margin-left:-20px;margin-right:-20px;padding-left:20px;padding-right:20px}
+  .footer-company-line{gap:7px;font-size:.66rem}
+  .footer-guide-btn{padding:0 10px}
+}
+@media(max-width:1100px){
+  .footer-company-line{flex-wrap:wrap;white-space:normal;row-gap:7px}
+}
+@media(max-width:820px){
+  .landing-footer.landing-footer-company{margin-left:-16px;margin-right:-16px;padding:14px 16px}
+  .footer-company-line{justify-content:center;text-align:center;font-size:.72rem}
+}
+@media(max-width:540px){
+  .footer-sep{display:none}
+  .footer-company-line{display:flex;flex-direction:column;gap:5px}
+  .footer-guide-btn{margin:5px 0 0;min-height:38px;padding:0 16px}
+}
